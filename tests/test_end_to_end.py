@@ -1,5 +1,4 @@
 # tests/test_end_to_end.py
-import numpy as np
 from gemscanner.synthetic.generator import generate_ellipsoid_scan
 from gemscanner.reconstruction.pipeline import reconstruct_dataset
 

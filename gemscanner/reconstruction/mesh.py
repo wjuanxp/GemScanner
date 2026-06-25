@@ -50,10 +50,10 @@ def loft_slices_to_mesh(slices, n_radial=180):
 
     bottom_c = len(vertices)
     top_c = bottom_c + 1
-    bottom_center = np.array([rings[0, :, 0].mean(), rings[0, :, 1].mean(),
-                              rings[0, 0, 2]])
-    top_center = np.array([rings[-1, :, 0].mean(), rings[-1, :, 1].mean(),
-                           rings[-1, 0, 2]])
+    bc = polygon_centroid(run[0].polygon)
+    bottom_center = np.array([bc[0], bc[1], rings[0, 0, 2]])
+    tc = polygon_centroid(run[-1].polygon)
+    top_center = np.array([tc[0], tc[1], rings[-1, 0, 2]])
     vertices = np.vstack([vertices, bottom_center, top_center])
 
     base = (M - 1) * n_radial

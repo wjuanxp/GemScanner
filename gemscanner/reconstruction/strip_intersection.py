@@ -8,7 +8,7 @@ from gemscanner.reconstruction.base import ReconstructionParams, SliceResult
 
 class StripIntersectionReconstructor:
     def slice_cross_sections(self, dataset, params=None):
-        params = params or ReconstructionParams()
+        params = params if params is not None else ReconstructionParams()
         m = dataset.manifest
         H = m.image_height
         mmpp = m.mm_per_px
@@ -52,6 +52,6 @@ class StripIntersectionReconstructor:
 
     def reconstruct(self, dataset, params=None):
         from gemscanner.reconstruction.mesh import loft_slices_to_mesh
-        params = params or ReconstructionParams()
+        params = params if params is not None else ReconstructionParams()
         slices = self.slice_cross_sections(dataset, params)
         return loft_slices_to_mesh(slices, params.n_radial)

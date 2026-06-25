@@ -9,7 +9,7 @@ def clip_convex_polygon(polygon, normal, offset):
     """
     polygon = np.asarray(polygon, dtype=float)
     if len(polygon) == 0:
-        return polygon
+        return np.empty((0, 2), dtype=float)
     normal = np.asarray(normal, dtype=float)
     result = []
     n = len(polygon)

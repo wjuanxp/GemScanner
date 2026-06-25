@@ -22,7 +22,7 @@ def _largest_component(mask):
     m = mask.astype(np.uint8)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     if num <= 1:
-        return mask
+        return mask.copy()
     areas = stats[1:, cv2.CC_STAT_AREA]
     largest = 1 + int(np.argmax(areas))
     return labels == largest
