@@ -14,6 +14,7 @@ The glue tasks (5, 6, 8) target ESP-IDF **5.4**. Apply these when implementing o
 
 - **B6 console vs. driver (most important).** `sdkconfig.defaults` sets `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y`, so boot logs share the USB Serial/JTAG peripheral with the protocol. Installing `usb_serial_jtag_driver_install` while the console also owns that peripheral can interleave log bytes into the protocol stream. On the bench, if RX/replies misbehave, set the console to **None** (or route it to UART0) via `idf.py menuconfig → Component config → ESP System Settings → Channel for console output`, so the driver fully owns USB for the line protocol. Keep `printf` debugging off the protocol channel.
 - **B5 GPTimer ISR not in IRAM.** The `on_alarm` callback is **not** marked `IRAM_ATTR` (the default gptimer ISR isn't in IRAM, and the callback calls flash-resident helpers; marking it IRAM without `CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` + all-IRAM callees would crash when the cache is disabled). `gptimer_set_alarm_action` and `gptimer_stop` are ISR-safe in 5.4. This is already reflected in the Task 5 code.
+- **B5 GPTimer re-arm uses auto-reload (corrected during implementation).** Both alarm configs use `.flags.auto_reload_on_alarm = true` with `.reload_count = 0`, so the counter restarts at 0 each alarm and `alarm_count = ramp_interval_us(...)` is the *relative* interval to the next step. (An earlier draft used `auto_reload = false`, which set absolute counter values equal to small interval numbers the free-running counter had already passed — collapsing the ramp into a burst.) ISR-shared state (`s_profile`, `s_waiter`, `s_total`, `s_index`) is `volatile`; `esp_timer` is not a dependency.
 - **B8 led_strip v2.x.** Set `.led_model = LED_MODEL_WS2812` in `led_strip_config_t` (WS2812 is GRB); reflected in Task 8 code. `led_strip_new_rmt_device` + `led_strip_rmt_config_t{.resolution_hz}` are correct for v2.
 - **B8 LVGL 9.2 / esp_lvgl_port v2.** In LVGL 9, prefer `lv_display_get_screen_active(disp)` over the deprecated `lv_disp_get_scr_act(disp)`. The 172-wide ST7789 panel has a column/row **offset** vs the controller's 240×320 RAM — call `esp_lcd_panel_set_gap(panel, X_OFFSET, Y_OFFSET)` and tune `X_OFFSET`/`Y_OFFSET` (commonly 34,0 for this panel) plus `mirror`/`swap_xy` on the bench until the labels sit correctly. `esp_lcd_panel_dev_config_t.rgb_ele_order` is the correct 5.4 field name.
 - **General.** First `idf.py build` downloads the managed components named in `idf_component.yml`; ensure network access. Run `idf.py set-target esp32c6` once before the first build.
@@ -686,7 +687,7 @@ static bool on_alarm(gptimer_handle_t t, const gptimer_alarm_event_data_t *e, vo
         vTaskNotifyGiveFromISR(s_waiter, &hp);
     } else {
         gptimer_alarm_config_t a = { .reload_count = 0, .alarm_count =
-            ramp_interval_us(s_profile, s_total, s_index), .flags.auto_reload_on_alarm = false };
+            ramp_interval_us(s_profile, s_total, s_index), .flags.auto_reload_on_alarm = true };  // reload to 0 => alarm_count is the relative interval
         gptimer_set_alarm_action(t, &a);
     }
     return hp == pdTRUE;
@@ -718,7 +719,7 @@ void stepper_move_blocking(long microsteps, const ramp_profile_t *profile) {
 
     gptimer_set_raw_count(s_timer, 0);
     gptimer_alarm_config_t a = { .reload_count = 0,
-        .alarm_count = ramp_interval_us(profile, s_total, 0), .flags.auto_reload_on_alarm = false };
+        .alarm_count = ramp_interval_us(profile, s_total, 0), .flags.auto_reload_on_alarm = true };  // reload to 0 => alarm_count is the relative interval
     gptimer_set_alarm_action(s_timer, &a);
     gptimer_start(s_timer);
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
