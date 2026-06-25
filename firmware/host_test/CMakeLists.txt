@@ -19,3 +19,7 @@ endfunction()
 add_executable(test_scaffold test_scaffold.c)
 target_include_directories(test_scaffold PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME test_scaffold COMMAND test_scaffold)
+
+add_pure_test(test_command_parser command_parser
+  ${COMPONENTS_DIR}/command_parser/command_parser.c
+  test_command_parser.c)
