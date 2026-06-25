@@ -27,3 +27,7 @@ add_pure_test(test_command_parser command_parser
 add_pure_test(test_motion_math motion_math
   ${COMPONENTS_DIR}/motion_math/motion_math.c
   test_motion_math.c)
+
+add_pure_test(test_ramp ramp
+  ${COMPONENTS_DIR}/ramp/ramp.c
+  test_ramp.c)
