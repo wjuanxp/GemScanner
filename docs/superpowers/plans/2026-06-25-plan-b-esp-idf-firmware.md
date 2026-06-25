@@ -8,6 +8,16 @@
 
 **Tech Stack:** C, ESP-IDF v5.x (installed at `D:\ESP32`), ESP32-C6 target. Host tests: MinGW gcc 13.2 + CMake/CTest 3.29. Managed components: `espressif/led_strip`, `lvgl/lvgl`, `espressif/esp_lvgl_port`.
 
+## ESP-IDF 5.4 compatibility notes (pre-checked 2026-06-25)
+
+The glue tasks (5, 6, 8) target ESP-IDF **5.4**. Apply these when implementing on the bench — they are folded into the task code where noted, plus these standing caveats:
+
+- **B6 console vs. driver (most important).** `sdkconfig.defaults` sets `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y`, so boot logs share the USB Serial/JTAG peripheral with the protocol. Installing `usb_serial_jtag_driver_install` while the console also owns that peripheral can interleave log bytes into the protocol stream. On the bench, if RX/replies misbehave, set the console to **None** (or route it to UART0) via `idf.py menuconfig → Component config → ESP System Settings → Channel for console output`, so the driver fully owns USB for the line protocol. Keep `printf` debugging off the protocol channel.
+- **B5 GPTimer ISR not in IRAM.** The `on_alarm` callback is **not** marked `IRAM_ATTR` (the default gptimer ISR isn't in IRAM, and the callback calls flash-resident helpers; marking it IRAM without `CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM` + all-IRAM callees would crash when the cache is disabled). `gptimer_set_alarm_action` and `gptimer_stop` are ISR-safe in 5.4. This is already reflected in the Task 5 code.
+- **B8 led_strip v2.x.** Set `.led_model = LED_MODEL_WS2812` in `led_strip_config_t` (WS2812 is GRB); reflected in Task 8 code. `led_strip_new_rmt_device` + `led_strip_rmt_config_t{.resolution_hz}` are correct for v2.
+- **B8 LVGL 9.2 / esp_lvgl_port v2.** In LVGL 9, prefer `lv_display_get_screen_active(disp)` over the deprecated `lv_disp_get_scr_act(disp)`. The 172-wide ST7789 panel has a column/row **offset** vs the controller's 240×320 RAM — call `esp_lcd_panel_set_gap(panel, X_OFFSET, Y_OFFSET)` and tune `X_OFFSET`/`Y_OFFSET` (commonly 34,0 for this panel) plus `mirror`/`swap_xy` on the bench until the labels sit correctly. `esp_lcd_panel_dev_config_t.rgb_ele_order` is the correct 5.4 field name.
+- **General.** First `idf.py build` downloads the managed components named in `idf_component.yml`; ensure network access. Run `idf.py set-target esp32c6` once before the first build.
+
 ## Global Constraints
 
 - Target chip: **esp32c6**. ESP-IDF environment is at `D:\ESP32` — activate it with `D:\ESP32\export.ps1` (PowerShell) or `D:/ESP32/export.bat` before any `idf.py` command.
@@ -663,7 +673,8 @@ static volatile unsigned s_total, s_index;
 static const ramp_profile_t *s_profile;
 static TaskHandle_t s_waiter;
 
-static bool IRAM_ATTR on_alarm(gptimer_handle_t t, const gptimer_alarm_event_data_t *e, void *arg) {
+// NOT IRAM_ATTR: default gptimer ISR runs from flash; callee helpers are flash-resident.
+static bool on_alarm(gptimer_handle_t t, const gptimer_alarm_event_data_t *e, void *arg) {
     (void)t; (void)e; (void)arg;
     gpio_set_level(PIN_STEP, 1);
     esp_rom_delay_us(STEP_PULSE_US);
@@ -987,6 +998,7 @@ static void lcd_init(void) {
     esp_lcd_new_panel_st7789(io, &pcfg, &panel);
     esp_lcd_panel_reset(panel); esp_lcd_panel_init(panel);
     esp_lcd_panel_invert_color(panel, true);
+    esp_lcd_panel_set_gap(panel, 34, 0);   // 172-wide ST7789 offset; tune on bench
     esp_lcd_panel_disp_on_off(panel, true);
 
     lvgl_port_cfg_t lp = ESP_LVGL_PORT_INIT_CONFIG();
@@ -995,14 +1007,15 @@ static void lcd_init(void) {
         .buffer_size = 172*40, .double_buffer = true, .hres = 172, .vres = 320,
         .rotation = { .swap_xy = false, .mirror_x = false, .mirror_y = false } };
     lv_display_t *disp = lvgl_port_add_disp(&dc);
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
+    lv_obj_t *scr = lv_display_get_screen_active(disp);   // LVGL 9.x
     s_l_state = lv_label_create(scr); lv_obj_align(s_l_state, LV_ALIGN_TOP_LEFT, 6, 10);
     s_l_angle = lv_label_create(scr); lv_obj_align(s_l_angle, LV_ALIGN_TOP_LEFT, 6, 40);
     s_l_steps = lv_label_create(scr); lv_obj_align(s_l_steps, LV_ALIGN_TOP_LEFT, 6, 70);
 }
 
 void status_display_init(void) {
-    led_strip_config_t sc = { .strip_gpio_num = PIN_RGB_LED, .max_leds = 1 };
+    led_strip_config_t sc = { .strip_gpio_num = PIN_RGB_LED, .max_leds = 1,
+                              .led_model = LED_MODEL_WS2812 };
     led_strip_rmt_config_t rc = { .resolution_hz = 10*1000*1000 };
     led_strip_new_rmt_device(&sc, &rc, &s_led);
     lcd_init();
