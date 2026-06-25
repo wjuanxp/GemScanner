@@ -9,8 +9,8 @@
 
 static gptimer_handle_t s_timer;
 static volatile unsigned s_total, s_index;
-static const ramp_profile_t *s_profile;
-static TaskHandle_t s_waiter;
+static volatile const ramp_profile_t *s_profile;
+static volatile TaskHandle_t s_waiter;
 
 // NOT IRAM_ATTR: default gptimer ISR runs from flash; callee helpers are flash-resident.
 static bool on_alarm(gptimer_handle_t t, const gptimer_alarm_event_data_t *e, void *arg) {
@@ -24,8 +24,9 @@ static bool on_alarm(gptimer_handle_t t, const gptimer_alarm_event_data_t *e, vo
         gptimer_stop(t);
         vTaskNotifyGiveFromISR(s_waiter, &hp);
     } else {
+        // auto-reload to 0 => alarm_count is the relative interval to the next step
         gptimer_alarm_config_t a = { .reload_count = 0, .alarm_count =
-            ramp_interval_us(s_profile, s_total, s_index), .flags.auto_reload_on_alarm = false };
+            ramp_interval_us((const ramp_profile_t *)s_profile, s_total, s_index), .flags.auto_reload_on_alarm = true };
         gptimer_set_alarm_action(t, &a);
     }
     return hp == pdTRUE;
@@ -57,7 +58,7 @@ void stepper_move_blocking(long microsteps, const ramp_profile_t *profile) {
 
     gptimer_set_raw_count(s_timer, 0);
     gptimer_alarm_config_t a = { .reload_count = 0,
-        .alarm_count = ramp_interval_us(profile, s_total, 0), .flags.auto_reload_on_alarm = false };
+        .alarm_count = ramp_interval_us((const ramp_profile_t *)s_profile, s_total, 0), .flags.auto_reload_on_alarm = true };
     gptimer_set_alarm_action(s_timer, &a);
     gptimer_start(s_timer);
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
