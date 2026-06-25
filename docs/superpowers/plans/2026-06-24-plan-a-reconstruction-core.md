@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.11+, NumPy, OpenCV (`opencv-python`), trimesh, pytest. (Open3D viewer and live UI are Plan C, not here.)
 
+> **Post-execution corrections (2026-06-24).** This plan was executed and merged. Three deltas from the code blocks below were applied during execution and are the source of truth: (1) `coords.row_to_z`/`z_to_row` use a **center-of-image** z-origin (`z=0` at row `(height-1)/2`), not the bottom-row origin shown in Task 2 — required so the reconstructor's z matches the generator's and the Task 10 midplane test straddles the equator; the snippet in Task 2 has been updated to match. (2) `mesh.py` calls `fix_normals(multibody=False)` to avoid pulling in scipy (Task 11). (3) `pytest` moved to `[project.optional-dependencies] dev`, the empty-input guard in `clip_convex_polygon` returns a canonical `(0,2)`, `_largest_component` returns a copy, the cap centers use `polygon_centroid`, and `params or …` became `params is not None`. Do not "revert" these when reading the older snippets below.
+
 ## Global Constraints
 
 - Python **3.11+**; Windows host.
@@ -142,12 +144,13 @@ import math
 
 
 def row_to_z(v, height, mm_per_px):
-    """Map image row v (0 at top) to object height z in mm (increasing upward)."""
-    return (height - 1 - v) * mm_per_px
+    """Map image row v (0 at top) to object height z in mm (increasing upward).
+    z=0 at the vertical centre of the image (row (height-1)/2)."""
+    return ((height - 1) / 2.0 - v) * mm_per_px
 
 
 def z_to_row(z, height, mm_per_px):
-    return (height - 1) - z / mm_per_px
+    return (height - 1) / 2.0 - z / mm_per_px
 
 
 def axis_column_at_row(axis_column, axis_tilt_rad, v, height):
@@ -1099,7 +1102,7 @@ def loft_slices_to_mesh(slices, n_radial=180):
         faces.append([top_c, base + j, base + j2])    # top cap
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=np.array(faces), process=True)
-    mesh.fix_normals()
+    mesh.fix_normals(multibody=False)   # single-body mesh; avoids a scipy dependency
     return mesh
 ```
 
