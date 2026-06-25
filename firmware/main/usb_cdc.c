@@ -15,8 +15,11 @@ int usb_cdc_read_line(char *buf, int cap) {
         uint8_t ch;
         int r = usb_serial_jtag_read_bytes(&ch, 1, portMAX_DELAY);
         if (r <= 0) continue;
-        if (ch == '\n') { buf[n] = 0; return n; }
-        if (ch == '\r') continue;
+        if (ch == '\n' || ch == '\r') {     // accept CR, LF, or CRLF as line end
+            if (n == 0) continue;           // skip empty lines (e.g. the LF of a CRLF)
+            buf[n] = 0;
+            return n;
+        }
         if (n < cap - 1) buf[n++] = (char)ch;
     }
 }
