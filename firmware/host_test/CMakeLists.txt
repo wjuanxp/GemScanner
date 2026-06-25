@@ -23,3 +23,7 @@ add_test(NAME test_scaffold COMMAND test_scaffold)
 add_pure_test(test_command_parser command_parser
   ${COMPONENTS_DIR}/command_parser/command_parser.c
   test_command_parser.c)
+
+add_pure_test(test_motion_math motion_math
+  ${COMPONENTS_DIR}/motion_math/motion_math.c
+  test_motion_math.c)
