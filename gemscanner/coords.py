@@ -3,12 +3,13 @@ import math
 
 
 def row_to_z(v, height, mm_per_px):
-    """Map image row v (0 at top) to object height z in mm (increasing upward)."""
-    return (height - 1 - v) * mm_per_px
+    """Map image row v (0 at top) to object height z in mm (increasing upward).
+    z=0 at the vertical centre of the image (row (height-1)/2)."""
+    return ((height - 1) / 2.0 - v) * mm_per_px
 
 
 def z_to_row(z, height, mm_per_px):
-    return (height - 1) - z / mm_per_px
+    return (height - 1) / 2.0 - z / mm_per_px
 
 
 def axis_column_at_row(axis_column, axis_tilt_rad, v, height):
