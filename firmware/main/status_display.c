@@ -23,7 +23,8 @@ static led_strip_handle_t s_led;
 static lv_obj_t *s_l_state, *s_l_angle, *s_l_steps;
 
 static void led_set(uint8_t r, uint8_t g, uint8_t b) {
-    led_strip_set_pixel(s_led, 0, r, g, b);
+    // Onboard LED reads RGB order; led_strip's WS2812 model emits GRB, so swap R<->G here.
+    led_strip_set_pixel(s_led, 0, g, r, b);
     led_strip_refresh(s_led);
 }
 
