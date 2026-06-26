@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 
+// These counters are file-static; each test executable must be a single translation unit (one .c with its own main).
 static int mu_tests_run = 0;
 static int mu_fails = 0;
 

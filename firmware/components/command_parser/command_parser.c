@@ -10,6 +10,7 @@ static int ci_eq(const char *a, const char *b) {
 
 command_t command_parse(const char *line) {
     command_t c = { CMD_UNKNOWN, 0, 0, 0.0 };
+    // Input lines are capped at 63 chars; longer lines are truncated before parsing.
     char buf[64];
     size_t n = 0;
     while (line[n] && n < sizeof(buf) - 1) { buf[n] = line[n]; n++; }
@@ -21,8 +22,7 @@ command_t command_parse(const char *line) {
     while (*verb == ' ' || *verb == '\t') verb++;
     char *arg = verb;
     while (*arg && *arg != ' ' && *arg != '\t') arg++;
-    int has_space = (*arg != 0);
-    if (has_space) *arg++ = 0;
+    if (*arg) *arg++ = 0;   // terminate the verb if a separator was found
     while (*arg == ' ' || *arg == '\t') arg++;
     int arg_present = (*arg != 0);
 
