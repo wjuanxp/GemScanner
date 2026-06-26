@@ -1,0 +1,7 @@
+# firmware/.gitignore
+build/
+host_test/build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
