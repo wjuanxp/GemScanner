@@ -5,6 +5,7 @@
 #include "ramp.h"
 #include "stepper.h"
 #include "usb_cdc.h"
+#include "status_display.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
@@ -14,11 +15,18 @@ static long steps_per_rev = 0;
 static ramp_profile_t profile = { .v_start = 200, .v_max = 4000, .accel = 20000 };
 static unsigned settle_ms = 150;
 
+static double cur_angle(void) {
+    return mm_wrap_deg(mm_microsteps_to_degrees(pos_steps, steps_per_rev));
+}
+
 static void do_move(long microsteps) {
     usb_cdc_write_line("OK");
+    status_display_set(ST_MOVING, cur_angle(), pos_steps);
     stepper_move_blocking(microsteps, &profile);
     pos_steps += microsteps;
+    status_display_set(ST_SETTLING, cur_angle(), pos_steps);
     vTaskDelay(pdMS_TO_TICKS(settle_ms));
+    status_display_set(ST_IDLE, cur_angle(), pos_steps);
     usb_cdc_write_line("READY");
 }
 
