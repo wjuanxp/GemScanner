@@ -1,0 +1,9 @@
+camera_backend: baumer        # mock | opencv | baumer
+camera:
+  exposure_us: 5000
+serial_port: COM7
+serial_baud: 115200
+scan:
+  n_views: 180
+  settle_ms: 150
+calibration_path: calibration.json
