@@ -7,12 +7,17 @@
 #include "esp_lcd_panel_vendor.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static const char *TAG = "status_display";
+
+#define LCD_BL_PIN        22
+#define LCD_BL_DUTY_PCT   50          // backlight brightness (0-100)
+#define LCD_BL_RES        LEDC_TIMER_8_BIT   // 0..255
 
 static led_strip_handle_t s_led;
 static lv_obj_t *s_l_state, *s_l_angle, *s_l_steps;
@@ -40,10 +45,24 @@ static void lcd_init(void) {
     esp_lcd_panel_set_gap(panel, 34, 0);   // 172-wide ST7789 offset; tune on bench
     esp_lcd_panel_disp_on_off(panel, true);
 
-    // Drive LCD backlight (GPIO22) high
-    gpio_config_t bl = { .pin_bit_mask = (1ULL << 22), .mode = GPIO_MODE_OUTPUT };
-    gpio_config(&bl);
-    gpio_set_level(22, 1);   // LCD backlight on
+    // LCD backlight on GPIO22 via LEDC PWM at LCD_BL_DUTY_PCT brightness
+    ledc_timer_config_t bl_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,   // ESP32-C6 has only low-speed mode
+        .duty_resolution = LCD_BL_RES,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
+    ledc_channel_config_t bl_ch = {
+        .gpio_num = LCD_BL_PIN,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = ((1 << 8) - 1) * LCD_BL_DUTY_PCT / 100,   // 8-bit: 128 = 50%
+        .hpoint = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
 
     lvgl_port_cfg_t lp = ESP_LVGL_PORT_INIT_CONFIG();
     ESP_ERROR_CHECK(lvgl_port_init(&lp));
