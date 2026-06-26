@@ -68,7 +68,8 @@ static void lcd_init(void) {
     ESP_ERROR_CHECK(lvgl_port_init(&lp));
     lvgl_port_display_cfg_t dc = { .io_handle = io, .panel_handle = panel,
         .buffer_size = 172*40, .double_buffer = true, .hres = 172, .vres = 320,
-        .rotation = { .swap_xy = false, .mirror_x = false, .mirror_y = false } };
+        .rotation = { .swap_xy = false, .mirror_x = false, .mirror_y = false },
+        .flags = { .swap_bytes = true } };   // RGB565 byte order for ST7789 (fixes colour fringe)
     lv_display_t *disp = lvgl_port_add_disp(&dc);
     lv_obj_t *scr = lv_display_get_screen_active(disp);   // LVGL 9.x
     s_l_state = lv_label_create(scr); lv_obj_align(s_l_state, LV_ALIGN_TOP_LEFT, 6, 10);
