@@ -34,16 +34,16 @@ The glue tasks (5, 6, 8) target ESP-IDF **5.4**. Apply these when implementing o
 
 | Command | Meaning | Immediate reply | Deferred reply |
 |---------|---------|-----------------|----------------|
-| `STEP <n>` | Move `n` microsteps, signed (+ = DIR active) | `OK` (or `ERR busy`) | `READY` after move + settle |
-| `MOVEDEG <x>` | Move `x` degrees (float) | `OK` / `ERR busy` / `ERR nores` | `READY` after move + settle |
+| `STEP <n>` | Move `n` microsteps, signed (+ = DIR active) | `OK` | `READY` after move + settle |
+| `MOVEDEG <x>` | Move `x` degrees (float) | `OK` / `ERR nores` | `READY` after move + settle |
 | `SETV <v>` | Max speed, microsteps/s (uint) | `OK` / `ERR badarg` | — |
 | `SETACC <a>` | Acceleration, microsteps/s² (uint) | `OK` / `ERR badarg` | — |
 | `SETSETTLE <ms>` | Settle delay, ms (uint) | `OK` / `ERR badarg` | — |
 | `SETRES <n>` | Microsteps per 360° (uint) | `OK` / `ERR badarg` | — |
 | `HOME` | Zero logical angle (no motion) | `OK` | `READY` |
-| `STATUS` | Query | `STATUS angle=<deg> steps=<n> state=<idle\|moving\|settling> v=<> a=<> settle=<ms> res=<n>` | — |
+| `STATUS` | Query | `STATUS angle=<deg> steps=<n> state=idle v=<> a=<> settle=<ms> res=<n>` | — |
 
-Unknown verb → `ERR unknown`. Malformed/overflowing argument → `ERR badarg`. One reply line per event; the host waits for `READY` before capturing a frame.
+Unknown verb → `ERR unknown`. Malformed/overflowing argument → `ERR badarg`. One reply line per event; the host waits for `READY` before capturing a frame. The controller is single-threaded and blocks during a move, so `STATUS` is only ever serviced between commands (always `state=idle`); the live moving/settling state is surfaced on the RGB LED and LCD, not via `STATUS`.
 
 ---
 
@@ -950,7 +950,7 @@ git commit -m "feat(fw): command dispatch controller with OK/READY/STATUS protoc
 # firmware/main/idf_component.yml
 dependencies:
   espressif/led_strip: "^2"
-  lvgl/lvgl: "~9.2.0"
+  lvgl/lvgl: "~9.3.0"          # 9.3 pairs with esp_lvgl_port 2.8 (avoids RGB565_SWAPPED gap)
   espressif/esp_lvgl_port: "^2"
 ```
 

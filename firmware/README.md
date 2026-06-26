@@ -33,7 +33,7 @@ the settle delay elapses.
 
 | Command | Meaning | Immediate | Deferred |
 |---------|---------|-----------|----------|
-| `STEP <n>` | move `n` microsteps, signed (+ = DIR active) | `OK` / `ERR busy` | `READY` |
+| `STEP <n>` | move `n` microsteps, signed (+ = DIR active) | `OK` | `READY` |
 | `MOVEDEG <x>` | move `x` degrees (float) | `OK` / `ERR nores` | `READY` |
 | `SETV <v>` | max speed, microsteps/s (>0) | `OK` / `ERR badarg` | — |
 | `SETACC <a>` | acceleration, microsteps/s² (>0) | `OK` / `ERR badarg` | — |
