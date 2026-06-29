@@ -6,3 +6,11 @@ dist/
 .pytest_cache/
 .venv/
 venv/
+
+# bench / runtime artifacts (machine-specific)
+/calibration.json
+/scans/
+/cam_*.png
+/grab.png
+/gentl_grab.png
+/silhouette.png
