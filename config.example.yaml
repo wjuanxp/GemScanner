@@ -1,7 +1,16 @@
-camera_backend: baumer        # mock | opencv | baumer
+# camera_backend: mock | opencv | baumer | gentl
+#   gentl   -> GenICam/GenTL via Harvesters + a vendor .cti producer.
+#              Required for legacy Baumer GigE cameras (e.g. EXG50); neoAPI
+#              ("baumer") only supports the newer CX/X families.
+#   baumer  -> Baumer neoAPI (newer CX-series cameras only).
+camera_backend: gentl
 camera:
-  exposure_us: 5000
-serial_port: COM7
+  cti_path: C:\Program Files\Baumer Camera Explorer\bgapi2_gige.cti
+  exposure_us: 60000        # ExposureTimeAbs on the EXG50; tune so background ~230-250
+  # gain: 1.0
+  # serial: "8618704817"    # pick a specific camera by serial (optional)
+  pixel_format: Mono8
+serial_port: COM3
 serial_baud: 115200
 scan:
   n_views: 180

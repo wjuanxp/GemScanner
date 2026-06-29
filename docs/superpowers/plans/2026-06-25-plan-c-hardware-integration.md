@@ -1231,14 +1231,27 @@ git commit -m "feat: OpenCV camera backend and camera factory"
 
 ---
 
-### Task 11: Baumer neoAPI backend (BENCH)
+### Task 11: Baumer camera backend (BENCH)
+
+> **BENCH FINDING (2026-06-28): the EXG50 needs the GenTL/Harvesters path, NOT neoAPI.**
+> neoAPI only supports Baumer's newer CX/X families. Connecting it to the legacy
+> EXG50 yields a stripped GigE-Vision fallback node map (~54 features, `Gain`/auto
+> throw `FeatureAccessException`) and the real sensor streams flat black (only the
+> on-camera test image streams). The EXG50's native SDK is GAPI/bgapi2 — what Camera
+> Explorer uses. The working Python path is **Harvesters + Baumer's `bgapi2_gige.cti`
+> GenTL producer** (`C:\Program Files\Baumer Camera Explorer\bgapi2_gige.cti`), which
+> exposes the real node map. That camera uses **legacy node names**: `ExposureTimeAbs`
+> (µs), `GainAbs`/`GainRaw`/`GainSelector`, `TestImageSelector` (no `ExposureAuto`/
+> `GainAuto`). Network prereq: camera + NIC on the same subnet (set a Persistent IP),
+> and disable VPN/Hyper-V virtual adapters that break GigE discovery.
 
 **Files:**
-- Create: `gemscanner/camera/baumer_camera.py`
+- Create: `gemscanner/camera/gentl_camera.py` (primary — `GenTLCamera`, Harvesters + .cti).
+- Create: `gemscanner/camera/baumer_camera.py` (neoAPI; kept for CX-series cameras only).
 
 **Interfaces:**
-- Consumes: `neoapi` (lazy import; Baumer SDK, installed separately).
-- Produces: `BaumerCamera(serial=None, exposure_us=None, pixel_format="Mono8")` implementing `CameraBackend`; `open()` connects via `neoapi.Cam()`, applies exposure/pixel format; `grab()` returns a grayscale `uint8` ndarray. Lazy import so `import gemscanner` works without neoAPI.
+- `GenTLCamera(cti_path, index=0, serial=None, exposure_us=None, gain=None, pixel_format="Mono8", fetch_timeout=5.0)` implementing `CameraBackend`; `open()` loads the `.cti` via Harvesters, creates the image acquirer, forces `TestImageSelector/TestPattern=Off`, sets pixel format/exposure/gain (modern→legacy node-name fallback), and starts acquisition; `grab()` fetches a buffer and returns a `uint8` 2-D array, **raising on an all-zero frame**. Harvesters imported lazily. Factory backend key: `gentl` (config carries `cti_path`, `exposure_us`, `gain`, `serial`, `pixel_format`). `harvesters` added to deps.
+- `BaumerCamera(serial=None, exposure_us=None, pixel_format="Mono8")` (neoAPI) implementing `CameraBackend`; lazy `neoapi` import. Use only for cameras neoAPI supports.
 
 - [ ] **Step 1: Implement**
 

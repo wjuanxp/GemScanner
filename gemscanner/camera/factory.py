@@ -12,4 +12,7 @@ def create_camera(config):
     if backend == "baumer":
         from gemscanner.camera.baumer_camera import BaumerCamera
         return BaumerCamera(**{k: v for k, v in cam.items()})
+    if backend == "gentl":
+        from gemscanner.camera.gentl_camera import GenTLCamera
+        return GenTLCamera(**{k: v for k, v in cam.items()})
     raise ValueError(f"unknown camera_backend {backend!r}")
