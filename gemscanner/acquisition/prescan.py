@@ -13,7 +13,7 @@ class PrescanResult:
 
 
 def prescan_fov_check(camera, stage, axis_column, mm_per_px,
-                      n_probe=12, threshold=None, margin_px=2):
+                      n_probe=12, threshold=None, margin_px=2, holder_mask_rows=0):
     inc = 360.0 / n_probe
     touched = False
     offending = None
@@ -22,7 +22,7 @@ def prescan_fov_check(camera, stage, axis_column, mm_per_px,
         for i in range(n_probe):
             if i > 0:
                 stage.move_deg(inc)
-            mask = extract_silhouette(camera.grab(), threshold)
+            mask = extract_silhouette(camera.grab(), threshold, holder_mask_rows)
             ys, xs = np.where(mask)
             if xs.size == 0:
                 continue

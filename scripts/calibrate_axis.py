@@ -21,6 +21,9 @@ def main():
     p.add_argument("-n", "--n-probe", type=int, default=12)
     p.add_argument("--threshold", type=int, default=None,
                    help="fixed silhouette threshold (default: Otsu)")
+    p.add_argument("--holder-mask-rows", type=int, default=None,
+                   help="mask this many bottom rows (pedestal+stage); "
+                        "default: config scan.holder_mask_rows")
     p.add_argument("--write", action="store_true",
                    help="write axis_column into calibration.json")
     a = p.parse_args()
@@ -30,6 +33,7 @@ def main():
     res = C.resolve_res(a, cal)
     if res <= 0:
         p.error("no steps_per_rev: pass --res or run calibrate_steps.py first")
+    holder = C.resolve_holder(a, cfg)
 
     cam = C.build_camera(cfg)
     stage = C.build_stage(cfg)
@@ -40,7 +44,7 @@ def main():
         for k in range(a.n_probe):
             if k:
                 stage.move_deg(inc)
-            mask = extract_silhouette(cam.grab(), a.threshold)
+            mask = extract_silhouette(cam.grab(), a.threshold, holder)
             ys, xs = np.where(mask)
             if xs.size == 0:
                 print(f"  angle {k * inc:6.1f}: empty silhouette, skipped")

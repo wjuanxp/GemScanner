@@ -49,3 +49,15 @@ def resolve_res(args, cal):
     """steps_per_rev from --res, else calibration.json."""
     res = getattr(args, "res", None) or int(cal.get("steps_per_rev") or 0)
     return res
+
+
+def resolve_holder(args, cfg):
+    """holder_mask_rows from --holder-mask-rows, else config scan dict, else 0.
+
+    Masks this many bottom image rows (the pedestal + stage below the gem) so the
+    silhouette centroid/reconstruction see only the gem. See config scan.holder_mask_rows.
+    """
+    v = getattr(args, "holder_mask_rows", None)
+    if v is None:
+        v = int((cfg.scan or {}).get("holder_mask_rows", 0) or 0)
+    return v

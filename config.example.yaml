@@ -6,10 +6,11 @@
 camera_backend: gentl
 camera:
   cti_path: C:\Program Files\Baumer Camera Explorer\bgapi2_gige.cti
-  exposure_us: 470000       # ExposureTimeAbs (us); 470000 = no dedicated light yet.
-                            # Drop to a few ms once the collimated backlight is in
-                            # (long exposure => slow scan). Tune so background ~230-250.
-  # gain: 1.0
+  exposure_us: 500          # ExposureTimeAbs (us); bench-tuned 2026-07-03 with the
+                            # collimated backlight (gem solid black min~2, bg bright).
+                            # Short exposure avoids refracted-light leakage through the
+                            # gem. 470000 was the no-light placeholder. Re-tune if lighting changes.
+  gain: 5
   # serial: "8618704817"    # pick a specific camera by serial (optional)
   pixel_format: Mono8
 serial_port: COM3
@@ -17,4 +18,11 @@ serial_baud: 115200
 scan:
   n_views: 180
   settle_ms: 150
+  holder_mask_rows: 705   # mask this many bottom image rows so the silhouette sees
+                          # only the gem, dropping the pedestal + stage below it.
+                          # Set to (image_height - gem/pedestal junction row); per-gem.
+                          # 2026-07-03 gem2 in focus: 1944 - ~1239. Re-check per mount.
+  smooth: 10              # Taubin smoothing iterations on the final mesh (0 = off).
+                          # ~10 removes per-slice layering without shrinking the gem;
+                          # very high counts can break watertightness. CLI --smooth overrides.
 calibration_path: calibration.json

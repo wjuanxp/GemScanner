@@ -11,6 +11,6 @@ venv/
 /calibration.json
 /scans/
 /cam_*.png
-/grab.png
+/grab*.png
 /gentl_grab.png
 /silhouette.png
