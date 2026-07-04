@@ -53,3 +53,24 @@ def test_wizard_panel_steps_and_signals(qtbot):
     w.calibrateRequested.connect(lambda: fired.append("cal"))
     w.calibrateRequested.emit()
     assert fired == ["cal"]
+
+
+from gemscanner.config import ScannerConfig
+from gemscanner.motion.fake_firmware import FakeFirmware
+from gemscanner.motion.stage import RotaryStage
+from gemscanner.testing.scene_camera import SceneCamera
+from gemscanner.gui.session import ScanSession
+from gemscanner.gui.project import Project, GemJob
+from gemscanner.gui.main_window import MainWindow
+
+
+def test_main_window_builds_and_shows_gems(qtbot):
+    fw = FakeFirmware()
+    stage = RotaryStage(fw)
+    cam = SceneCamera(fw, rx=4, ry=3, rz=5, mm_per_px=0.05, width=200, height=200)
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=stage)
+    project = Project(gems=[GemJob(name="ruby-01"), GemJob(name="emerald-02")])
+    win = MainWindow(project, session)
+    qtbot.addWidget(win)
+    assert [g.name for g in win.queue.gems()] == ["ruby-01", "emerald-02"]
+    win.close()

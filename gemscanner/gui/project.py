@@ -36,6 +36,9 @@ class Project:
         gems = [GemJob(**g) for g in data.pop("gems", [])]
         return cls(gems=gems, **data)
 
+    def to_scanner_config_default(self):
+        return self.to_scanner_config(GemJob(name="_", out=""))
+
     def to_scanner_config(self, gem: GemJob) -> ScannerConfig:
         camera = dict(self.camera)
         if gem.exposure_us is not None:
