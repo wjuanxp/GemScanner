@@ -68,6 +68,22 @@ preserved.
 - `WizardPanel` — the per-gem step sequence (Section 5).
 - `QueuePanel` — add / remove / reorder gems.
 
+### Visual style
+
+Modern minimalism with a **dark theme**. Applied via a single Qt stylesheet (QSS) loaded at startup —
+no per-widget inline styling. Guidelines:
+
+- Dark neutral background (near-black / dark grey), low-chroma surfaces, one restrained accent color for
+  primary actions and the "ready to scan" state.
+- Generous spacing, flat controls (no heavy bevels/gradients), minimal borders — separation by spacing
+  and subtle surface elevation rather than lines.
+- The live preview is the visual focus: the frame sits on the darkest surface so the bright backlit
+  silhouette carries the contrast; overlays (silhouette tint, mask line, FoV state) use the accent and a
+  warning color sparingly.
+- One clean sans-serif type scale; status/stats in a monospace face for legibility of `min/max/mean`.
+
+Style lives in `gemscanner/gui/style.qss` so it can be tweaked without touching widget code.
+
 ## 3. Threading
 
 The primary implementation risk. A **single `HardwareWorker` `QThread` is the only owner of the camera
