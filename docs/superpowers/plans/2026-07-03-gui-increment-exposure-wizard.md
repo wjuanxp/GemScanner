@@ -40,7 +40,7 @@
 
 ---
 
-## Task I1: Camera + session gain control (Qt-free)
+## Task 1: Camera + session gain control (Qt-free) [I1]
 
 **Files:**
 - Modify: `gemscanner/camera/base.py`
@@ -134,7 +134,7 @@ git commit -m "feat(camera): live set_gain and persistent set_exposure/set_gain;
 
 ---
 
-## Task I2: Worker applies pending exposure/gain
+## Task 2: Worker applies pending exposure/gain [I2]
 
 **Files:**
 - Modify: `gemscanner/gui/worker.py`
@@ -243,7 +243,7 @@ git commit -m "feat(gui): worker applies pending exposure/gain before preview gr
 
 ---
 
-## Task I3: ControlsPanel (exposure/gain sliders) + MainWindow wiring
+## Task 3: ControlsPanel (exposure/gain sliders) + MainWindow wiring [I3]
 
 **Files:**
 - Create: `gemscanner/gui/controls_panel.py`
@@ -461,7 +461,7 @@ git commit -m "feat(gui): exposure/gain sliders wired to worker with per-gem per
 
 ---
 
-## Task W1: WizardPanel cancel button + signal
+## Task 4: WizardPanel cancel button + signal [W1]
 
 **Files:**
 - Modify: `gemscanner/gui/wizard_panel.py`
@@ -527,7 +527,7 @@ git commit -m "feat(gui): WizardPanel cancel button and cancelRequested signal"
 
 ---
 
-## Task W2: MainWindow wizard sequencing + cancel wiring
+## Task 5: MainWindow wizard sequencing + cancel wiring [W2]
 
 **Files:**
 - Modify: `gemscanner/gui/main_window.py`
