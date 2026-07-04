@@ -31,6 +31,9 @@ class ScanSession:
     def set_exposure(self, us):
         self.camera.set_exposure(us)
 
+    def set_gain(self, g):
+        self.camera.set_gain(g)
+
     def grab(self):
         with self.camera:
             return self.camera.grab()

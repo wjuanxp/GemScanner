@@ -4,6 +4,20 @@ from gemscanner.motion.stage import RotaryStage
 from gemscanner.testing.scene_camera import SceneCamera
 from gemscanner.acquisition.scan_controller import ScanParams
 from gemscanner.gui.session import ScanSession
+from gemscanner.camera.base import CameraBackend
+
+
+class _RecordingCamera(CameraBackend):
+    def __init__(self):
+        self.exposures = []
+        self.gains = []
+    def open(self): pass
+    def close(self): pass
+    def grab(self):
+        import numpy as np
+        return np.full((10, 10), 255, np.uint8)
+    def set_exposure(self, us): self.exposures.append(us)
+    def set_gain(self, gain): self.gains.append(gain)
 
 
 def _session():
@@ -38,3 +52,14 @@ def test_session_calibrate_scan_reconstruct(tmp_path):
     assert watertight
     assert abs(extents[2] - 10.0) < 0.4        # 2*rz
     assert (tmp_path / "scan" / "gem.stl").exists()
+
+
+def test_session_forwards_exposure_and_gain():
+    from gemscanner.config import ScannerConfig
+    from gemscanner.gui.session import ScanSession
+    cam = _RecordingCamera()
+    s = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=object())
+    s.set_exposure(750.0)
+    s.set_gain(3.0)
+    assert cam.exposures == [750.0]
+    assert cam.gains == [3.0]
