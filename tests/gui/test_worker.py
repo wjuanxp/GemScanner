@@ -50,3 +50,31 @@ def test_calibrate_op_emits_result(qtbot):
     finally:
         w.shutdown()
         w.wait(3000)
+
+
+def test_worker_applies_pending_exposure_before_grab(qtbot):
+    from gemscanner.camera.base import CameraBackend
+
+    class RecCam(CameraBackend):
+        def __init__(self): self.exposures = []; self.gains = []
+        def open(self): pass
+        def close(self): pass
+        def grab(self): return np.full((20, 20), 255, np.uint8)
+        def set_exposure(self, us): self.exposures.append(us)
+        def set_gain(self, gain): self.gains.append(gain)
+
+    cam = RecCam()
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=object())
+    w = HardwareWorker(session)
+    w.start()
+    try:
+        w.set_view(threshold=None, holder_mask_rows=0)
+        w.set_exposure(900.0)
+        w.set_gain(4.0)
+        with qtbot.waitSignal(w.frameReady, timeout=3000):
+            w.start_preview()
+        assert cam.exposures and cam.exposures[-1] == 900.0
+        assert cam.gains and cam.gains[-1] == 4.0
+    finally:
+        w.shutdown()
+        w.wait(3000)

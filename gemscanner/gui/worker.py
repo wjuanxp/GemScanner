@@ -25,11 +25,19 @@ class HardwareWorker(QThread):
         self._running = True
         self._threshold = None
         self._holder = 0
+        self._pending_exposure = None
+        self._pending_gain = None
 
     # ---- called from the UI thread ----
     def set_view(self, threshold, holder_mask_rows):
         self._threshold = threshold
         self._holder = int(holder_mask_rows)
+
+    def set_exposure(self, us):
+        self._pending_exposure = float(us)
+
+    def set_gain(self, gain):
+        self._pending_gain = float(gain)
 
     def start_preview(self):
         self._preview = True
@@ -83,6 +91,12 @@ class HardwareWorker(QThread):
             if not self._cam_open:
                 self._session.camera.open()
                 self._cam_open = True
+            if self._pending_exposure is not None:
+                self._session.set_exposure(self._pending_exposure)
+                self._pending_exposure = None
+            if self._pending_gain is not None:
+                self._session.set_gain(self._pending_gain)
+                self._pending_gain = None
             frame = self._session.camera.grab()
             analysis = self._session.analyze(frame, self._threshold, self._holder)
             self.frameReady.emit(frame, analysis)
