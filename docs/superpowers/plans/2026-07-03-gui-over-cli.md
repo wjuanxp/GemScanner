@@ -372,9 +372,11 @@ def test_probe_axis_cancel_stops_early():
 
     def cancel():
         calls["n"] += 1
-        return calls["n"] > 4               # cancel after 4 probes
+        return calls["n"] > 2               # cancel after 2 probes -> <3 silhouettes
 
     import pytest
+    # cancelling before 3 silhouettes are collected interrupts the loop, so the
+    # fit has too few points and raises -- proof the cancel actually stopped it.
     with pytest.raises(ValueError):
         probe_axis(cam, stage, n_probe=12, cancel=cancel)
 ```
