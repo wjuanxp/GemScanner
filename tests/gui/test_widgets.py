@@ -74,3 +74,24 @@ def test_main_window_builds_and_shows_gems(qtbot):
     qtbot.addWidget(win)
     assert [g.name for g in win.queue.gems()] == ["ruby-01", "emerald-02"]
     win.close()
+
+
+def test_gem_switch_updates_worker_mask(qtbot):
+    """Regression: switching gems must update the worker's analysis mask (Fix 1)."""
+    fw = FakeFirmware()
+    stage = RotaryStage(fw)
+    cam = SceneCamera(fw, rx=4, ry=3, rz=5, mm_per_px=0.05, width=200, height=200)
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=stage)
+    project = Project(gems=[
+        GemJob(name="ruby-01", holder_mask_rows=30),
+        GemJob(name="emerald-02", holder_mask_rows=55),
+    ])
+    win = MainWindow(project, session)
+    qtbot.addWidget(win)
+    # Select the second gem — worker must pick up its mask
+    win._on_gem_selected(1)
+    assert win.worker._holder == 55, (
+        f"worker._holder={win.worker._holder!r}, expected 55 — "
+        "set_view not called after gem switch"
+    )
+    win.close()

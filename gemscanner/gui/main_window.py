@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         gem = self._current_gem()
         if gem is not None:
             self.preview.set_holder_mask_rows(gem.holder_mask_rows)
+            self.worker.set_view(None, gem.holder_mask_rows)
 
     def _start_scan(self):
         gem = self._current_gem()

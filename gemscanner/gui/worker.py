@@ -87,7 +87,7 @@ class HardwareWorker(QThread):
             analysis = self._session.analyze(frame, self._threshold, self._holder)
             self.frameReady.emit(frame, analysis)
         except Exception as exc:
-            self._preview = False
+            self._pause_preview()
             self.failed.emit("preview", str(exc))
 
     def _op_calibrate(self, n_probe=12):
