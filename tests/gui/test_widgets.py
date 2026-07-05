@@ -95,3 +95,34 @@ def test_gem_switch_updates_worker_mask(qtbot):
         "set_view not called after gem switch"
     )
     win.close()
+
+
+def test_controls_panel_signals_and_values(qtbot):
+    from gemscanner.gui.controls_panel import ControlsPanel
+    c = ControlsPanel()
+    qtbot.addWidget(c)
+    c.set_values(500.0, 5.0)
+    assert c.exposure_us() == 500.0
+    assert c.gain() == 5.0
+    seen = []
+    c.exposureChanged.connect(seen.append)
+    c.set_exposure_us(750.0)
+    c.exposureChanged.emit(c.exposure_us())   # simulate slider commit
+    assert seen[-1] == 750.0
+
+
+def test_main_window_gem_select_updates_controls_and_worker(qtbot):
+    fw = FakeFirmware()
+    stage = RotaryStage(fw)
+    cam = SceneCamera(fw, rx=4, ry=3, rz=5, mm_per_px=0.05, width=200, height=200)
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=stage)
+    project = Project(gems=[
+        GemJob(name="a", holder_mask_rows=30, exposure_us=400.0, gain=2.0),
+        GemJob(name="b", holder_mask_rows=55, exposure_us=800.0, gain=6.0),
+    ])
+    win = MainWindow(project, session)
+    qtbot.addWidget(win)
+    win.queue.select(1)
+    assert win.controls.exposure_us() == 800.0
+    assert win.controls.gain() == 6.0
+    win.close()

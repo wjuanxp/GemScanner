@@ -4,6 +4,7 @@ from gemscanner.acquisition.scan_controller import ScanParams
 from gemscanner.gui.preview_widget import LivePreviewWidget
 from gemscanner.gui.queue_panel import QueuePanel
 from gemscanner.gui.wizard_panel import WizardPanel
+from gemscanner.gui.controls_panel import ControlsPanel
 from gemscanner.gui.worker import HardwareWorker
 
 
@@ -18,12 +19,18 @@ class MainWindow(QMainWindow):
         self.preview = LivePreviewWidget()
         self.queue = QueuePanel()
         self.wizard = WizardPanel()
+        self.controls = ControlsPanel()
         self.queue.set_gems(project.gems)
+
+        cam_cfg = project.camera or {}
+        self._default_exposure = float(cam_cfg.get("exposure_us", ControlsPanel.EXPOSURE_MIN))
+        self._default_gain = float(cam_cfg.get("gain", ControlsPanel.GAIN_MIN))
 
         central = QWidget()
         root = QHBoxLayout(central)
         left = QVBoxLayout()
         left.addWidget(self.wizard)
+        left.addWidget(self.controls)
         left.addWidget(self.queue, 1)
         root.addLayout(left, 0)
         root.addWidget(self.preview, 1)
@@ -35,6 +42,8 @@ class MainWindow(QMainWindow):
         self.wizard.calibrateRequested.connect(lambda: self.worker.post("calibrate", n_probe=12))
         self.wizard.scanRequested.connect(self._start_scan)
         self.wizard.reconstructRequested.connect(self._start_reconstruct)
+        self.controls.exposureChanged.connect(self._on_exposure_changed)
+        self.controls.gainChanged.connect(self._on_gain_changed)
         self.worker.frameReady.connect(self.preview.set_frame)
         self.worker.progress.connect(self._on_progress)
         self.worker.result.connect(self._on_result)
@@ -45,6 +54,8 @@ class MainWindow(QMainWindow):
             self.queue.select(0)
         self.worker.start()
         self.worker.set_view(None, self.preview.holder_mask_rows())
+        self.worker.set_exposure(self._default_exposure)
+        self.worker.set_gain(self._default_gain)
         self.worker.start_preview()
 
     # ---- slots ----
@@ -64,6 +75,23 @@ class MainWindow(QMainWindow):
         if gem is not None:
             self.preview.set_holder_mask_rows(gem.holder_mask_rows)
             self.worker.set_view(None, gem.holder_mask_rows)
+            exposure = gem.exposure_us if gem.exposure_us is not None else self._default_exposure
+            gain = gem.gain if gem.gain is not None else self._default_gain
+            self.controls.set_values(exposure, gain)
+            self.worker.set_exposure(exposure)
+            self.worker.set_gain(gain)
+
+    def _on_exposure_changed(self, us):
+        self.worker.set_exposure(us)
+        gem = self._current_gem()
+        if gem is not None:
+            gem.exposure_us = us
+
+    def _on_gain_changed(self, gain):
+        self.worker.set_gain(gain)
+        gem = self._current_gem()
+        if gem is not None:
+            gem.gain = gain
 
     def _start_scan(self):
         gem = self._current_gem()
