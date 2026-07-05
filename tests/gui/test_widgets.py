@@ -136,3 +136,27 @@ def test_wizard_cancel_signal(qtbot):
     w.cancelRequested.connect(lambda: fired.append("x"))
     w.cancelRequested.emit()
     assert fired == ["x"]
+
+
+def test_main_window_wizard_sequencing(qtbot):
+    fw = FakeFirmware()
+    stage = RotaryStage(fw)
+    cam = SceneCamera(fw, rx=4, ry=3, rz=5, mm_per_px=0.05, width=200, height=200)
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=stage)
+    project = Project(gems=[GemJob(name="a"), GemJob(name="b")])
+    win = MainWindow(project, session)
+    qtbot.addWidget(win)
+
+    win.wizard.mountConfirmed.emit()
+    assert win.wizard.step() == 1                      # Align
+
+    win._on_result("calibrate", (99.5, 0.0))
+    assert win.wizard.step() == 4                      # Scan
+
+    win._on_result("scan", "scans/a")
+    assert win.wizard.step() == 5                      # Reconstruct
+
+    win.wizard.nextGemRequested.emit()
+    assert win._current == 1                           # advanced to gem b
+    assert win.wizard.step() == 0                      # back to Mount
+    win.close()

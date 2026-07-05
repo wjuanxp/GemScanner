@@ -39,9 +39,12 @@ class MainWindow(QMainWindow):
         # wiring
         self.preview.maskChanged.connect(self._on_mask_changed)
         self.queue.gemSelected.connect(self._on_gem_selected)
-        self.wizard.calibrateRequested.connect(lambda: self.worker.post("calibrate", n_probe=12))
+        self.wizard.calibrateRequested.connect(self._start_calibrate)
         self.wizard.scanRequested.connect(self._start_scan)
         self.wizard.reconstructRequested.connect(self._start_reconstruct)
+        self.wizard.mountConfirmed.connect(lambda: self.wizard.set_step(1))
+        self.wizard.nextGemRequested.connect(self._on_next_gem)
+        self.wizard.cancelRequested.connect(self.worker.cancel)
         self.controls.exposureChanged.connect(self._on_exposure_changed)
         self.controls.gainChanged.connect(self._on_gain_changed)
         self.worker.frameReady.connect(self.preview.set_frame)
@@ -68,6 +71,18 @@ class MainWindow(QMainWindow):
         gem = self._current_gem()
         if gem is not None:
             gem.holder_mask_rows = rows
+        if self.wizard.step() == 1:
+            self.wizard.set_step(2)
+
+    def _start_calibrate(self):
+        self.wizard.set_step(3)
+        self.worker.post("calibrate", n_probe=12)
+
+    def _on_next_gem(self):
+        nxt = self._current + 1
+        if nxt < len(self.project.gems):
+            self.queue.select(nxt)           # drives _on_gem_selected
+        self.wizard.set_step(0)              # back to Mount for the next gem
 
     def _on_gem_selected(self, index):
         self._current = index
@@ -121,6 +136,12 @@ class MainWindow(QMainWindow):
             watertight, extents = payload
             QMessageBox.information(self, "Reconstruct",
                                     f"watertight={watertight}\nextents={extents}")
+        if op == "calibrate":
+            self.wizard.set_step(4)          # -> Scan
+        elif op == "scan":
+            self.wizard.set_step(5)          # -> Reconstruct
+        elif op == "reconstruct":
+            self.wizard.set_step(6)          # -> Next gem
         self.worker.set_view(None, self.preview.holder_mask_rows())
         self.worker.start_preview()
 
