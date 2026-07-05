@@ -126,3 +126,13 @@ def test_main_window_gem_select_updates_controls_and_worker(qtbot):
     assert win.controls.exposure_us() == 800.0
     assert win.controls.gain() == 6.0
     win.close()
+
+
+def test_wizard_cancel_signal(qtbot):
+    from gemscanner.gui.wizard_panel import WizardPanel
+    w = WizardPanel()
+    qtbot.addWidget(w)
+    fired = []
+    w.cancelRequested.connect(lambda: fired.append("x"))
+    w.cancelRequested.emit()
+    assert fired == ["x"]

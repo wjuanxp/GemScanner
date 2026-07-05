@@ -14,6 +14,7 @@ class WizardPanel(QWidget):
     scanRequested = Signal()
     reconstructRequested = Signal()
     nextGemRequested = Signal()
+    cancelRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,13 +29,15 @@ class WizardPanel(QWidget):
         self._btn_scan = QPushButton("Scan")
         self._btn_recon = QPushButton("Reconstruct")
         self._btn_next = QPushButton("Next gem")
+        self._btn_cancel = QPushButton("Cancel")
         self._btn_mount.clicked.connect(self.mountConfirmed)
         self._btn_cal.clicked.connect(self.calibrateRequested)
         self._btn_scan.clicked.connect(self.scanRequested)
         self._btn_recon.clicked.connect(self.reconstructRequested)
         self._btn_next.clicked.connect(self.nextGemRequested)
+        self._btn_cancel.clicked.connect(self.cancelRequested)
         for b in (self._btn_mount, self._btn_cal, self._btn_scan,
-                  self._btn_recon, self._btn_next):
+                  self._btn_recon, self._btn_next, self._btn_cancel):
             buttons.addWidget(b)
 
         layout = QVBoxLayout(self)
