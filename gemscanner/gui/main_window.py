@@ -82,7 +82,7 @@ class MainWindow(QMainWindow):
         nxt = self._current + 1
         if nxt < len(self.project.gems):
             self.queue.select(nxt)           # drives _on_gem_selected
-        self.wizard.set_step(0)              # back to Mount for the next gem
+            self.wizard.set_step(0)          # back to Mount for the next gem
 
     def _on_gem_selected(self, index):
         self._current = index

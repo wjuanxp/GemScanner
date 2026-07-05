@@ -107,6 +107,7 @@ def test_controls_panel_signals_and_values(qtbot):
     seen = []
     c.exposureChanged.connect(seen.append)
     c.set_exposure_us(750.0)
+    assert seen == []                         # programmatic set must not emit
     c.exposureChanged.emit(c.exposure_us())   # simulate slider commit
     assert seen[-1] == 750.0
 
@@ -150,6 +151,9 @@ def test_main_window_wizard_sequencing(qtbot):
     win.wizard.mountConfirmed.emit()
     assert win.wizard.step() == 1                      # Align
 
+    win._on_mask_changed(40)                           # dragging mask on Align
+    assert win.wizard.step() == 2                      # Holder mask
+
     win._on_result("calibrate", (99.5, 0.0))
     assert win.wizard.step() == 4                      # Scan
 
@@ -159,4 +163,10 @@ def test_main_window_wizard_sequencing(qtbot):
     win.wizard.nextGemRequested.emit()
     assert win._current == 1                           # advanced to gem b
     assert win.wizard.step() == 0                      # back to Mount
+
+    # at end of queue, Next gem must not advance or reset the wizard
+    win.wizard.set_step(5)
+    win.wizard.nextGemRequested.emit()
+    assert win._current == 1                           # still last gem
+    assert win.wizard.step() == 5                      # unchanged (no next gem)
     win.close()
