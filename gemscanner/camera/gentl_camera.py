@@ -63,8 +63,14 @@ class GenTLCamera(CameraBackend):
         self._ia.start()
 
     def set_exposure(self, us):
+        self.exposure_us = float(us)
         if self._ia is not None:
             self._set_first(self._EXPOSURE, float(us))
+
+    def set_gain(self, gain):
+        self.gain = float(gain)
+        if self._ia is not None:
+            self._set_first(self._GAIN, float(gain))
 
     def grab(self):
         with self._ia.fetch(timeout=self.fetch_timeout) as buffer:

@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "gemscanner"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["numpy", "opencv-python", "trimesh", "pyserial", "open3d", "pyyaml", "harvesters"]
+dependencies = ["numpy", "opencv-python", "trimesh", "pyserial", "open3d", "pyyaml", "harvesters", "PySide6"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "pytest-qt"]
 
 [project.scripts]
 gemscanner = "gemscanner.cli:main"

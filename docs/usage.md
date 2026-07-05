@@ -69,3 +69,14 @@ Full bench bring-up / calibration order is in [`scripts/README.md`](../scripts/R
 | `scan.holder_mask_rows` | Bottom image rows to mask out (drops pedestal + stage below the gem). Per-gem: `1944 − junction_row`. |
 | `scan.smooth` | Taubin smoothing iterations on the final mesh (0 = off; ~10 removes per-slice layering without shrinking). |
 | `scan.settle_ms` | Post-move settle before capture. |
+
+## GUI
+
+Launch the guided GUI (dark theme; live preview + per-gem wizard + batch queue):
+
+    .venv/Scripts/python.exe -m gemscanner.cli gui -p project.example.yaml
+
+Per gem: mount → align (exposure/gain + silhouette overlay, aim for gem `min≈0`
+on a bright background) → drag the holder-mask line to the gem/pedestal junction →
+Calibrate axis → Scan → Reconstruct. Then select the next gem in the queue and
+repeat. Close Camera Explorer (`bexplorer`) first — only one app can hold the GigE camera.

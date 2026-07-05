@@ -18,13 +18,15 @@ class ScanController:
         self.camera = camera
         self.stage = stage
 
-    def run(self, out_dir, params):
+    def run(self, out_dir, params, progress=None, cancel=None):
         os.makedirs(os.path.join(out_dir, "frames"), exist_ok=True)
         inc = 360.0 / params.n_views
         angles, files = [], []
         h = w = 0
         with self.camera:
             for i in range(params.n_views):
+                if cancel is not None and cancel():
+                    break
                 if i > 0:
                     self.stage.move_deg(inc)
                 frame = self.camera.grab()
@@ -33,6 +35,8 @@ class ScanController:
                 cv2.imwrite(os.path.join(out_dir, "frames", fname), frame)
                 files.append(f"frames/{fname}")
                 angles.append(round(i * inc, 6))
+                if progress is not None:
+                    progress(i + 1, params.n_views)
         ScanManifest(
             angles_deg=angles, mm_per_px=params.mm_per_px,
             axis_column=params.axis_column, axis_tilt_rad=params.axis_tilt_rad,

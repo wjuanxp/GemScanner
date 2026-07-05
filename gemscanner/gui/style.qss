@@ -1,0 +1,20 @@
+* { font-family: "Segoe UI", "Inter", sans-serif; font-size: 13px; color: #e6e6e6; }
+QWidget { background: #14161a; }
+QLabel#panelTitle { font-size: 15px; font-weight: 600; color: #f2f2f2; padding: 6px 0; }
+QLabel#statsLabel { font-family: "Cascadia Mono", "Consolas", monospace; color: #9aa0a6; }
+QLabel#previewImage { background: #060708; border-radius: 6px; }
+QLabel#fovChip { padding: 3px 10px; border-radius: 10px; background: #23262c; }
+QLabel#fovChip[state="ok"] { background: #16351f; color: #4ade80; }
+QLabel#fovChip[state="warn"] { background: #3a1d1d; color: #f87171; }
+QPushButton {
+    background: #23262c; border: none; border-radius: 6px; padding: 8px 14px; color: #e6e6e6;
+}
+QPushButton:hover { background: #2c3038; }
+QPushButton:default { background: #2f6feb; color: #ffffff; }
+QPushButton:disabled { color: #5c6169; }
+QListWidget { background: #0f1114; border: none; border-radius: 6px; padding: 4px; }
+QListWidget::item:selected { background: #2f6feb; border-radius: 4px; }
+QProgressBar { background: #0f1114; border: none; border-radius: 6px; height: 8px; text-align: center; }
+QProgressBar::chunk { background: #2f6feb; border-radius: 6px; }
+QSlider::groove:vertical { width: 4px; background: #23262c; border-radius: 2px; }
+QSlider::handle:vertical { height: 16px; background: #2f6feb; border-radius: 4px; margin: 0 -6px; }

@@ -12,6 +12,9 @@ class CameraBackend(ABC):
     def set_exposure(self, us):
         pass
 
+    def set_gain(self, gain):
+        pass
+
     def __enter__(self):
         self.open()
         return self

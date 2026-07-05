@@ -6,11 +6,7 @@ Needs steps_per_rev (run calibrate_steps.py first).
 """
 import argparse
 
-import numpy as np
-
 import _common as C
-from gemscanner.vision.silhouette import extract_silhouette
-from gemscanner.calibration.fit import fit_rotation_axis
 
 
 def main():
@@ -38,25 +34,13 @@ def main():
     cam = C.build_camera(cfg)
     stage = C.build_stage(cfg)
     stage.set_resolution(res)
-    inc = 360.0 / a.n_probe
-    angles, cols = [], []
-    with cam:
-        for k in range(a.n_probe):
-            if k:
-                stage.move_deg(inc)
-            mask = extract_silhouette(cam.grab(), a.threshold, holder)
-            ys, xs = np.where(mask)
-            if xs.size == 0:
-                print(f"  angle {k * inc:6.1f}: empty silhouette, skipped")
-                continue
-            cols.append(float(xs.mean()))
-            angles.append(k * inc)
-            print(f"  angle {k * inc:6.1f}: centroid col {xs.mean():8.2f}")
-        stage.move_deg(inc)  # complete the revolution back to start
+    from gemscanner.calibration.axis_probe import probe_axis
 
-    if len(cols) < 3:
-        p.error("not enough silhouettes to fit (need >= 3)")
-    axis, amp = fit_rotation_axis(angles, cols)
+    def _progress(done, total):
+        print(f"  probe {done}/{total}")
+
+    axis, amp = probe_axis(cam, stage, n_probe=a.n_probe, threshold=a.threshold,
+                           holder_mask_rows=holder, progress=_progress)
     print(f"axis_column = {axis:.2f}   (centroid swing amplitude {amp:.2f} px)")
     if a.write:
         cal["axis_column"] = axis

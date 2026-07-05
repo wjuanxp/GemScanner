@@ -23,6 +23,9 @@ def main(argv=None):
     s.add_argument("--smooth", type=int, default=None,
                    help="Taubin smoothing iterations; overrides config scan.smooth")
 
+    g = sub.add_parser("gui")
+    g.add_argument("-p", "--project", default="project.yaml")
+
     args = p.parse_args(argv)
 
     if args.cmd == "reconstruct":
@@ -39,6 +42,9 @@ def main(argv=None):
     if args.cmd == "scan":
         from gemscanner.run_scan import run_scan_from_config   # Task 12
         return run_scan_from_config(args.config, args.out, smooth=args.smooth)
+    if args.cmd == "gui":
+        from gemscanner.gui.app import main as gui_main
+        return gui_main(["-p", args.project])
     return 1
 
 
