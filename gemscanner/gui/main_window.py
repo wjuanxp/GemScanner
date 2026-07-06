@@ -5,6 +5,7 @@ from gemscanner.gui.preview_widget import LivePreviewWidget
 from gemscanner.gui.queue_panel import QueuePanel
 from gemscanner.gui.wizard_panel import WizardPanel
 from gemscanner.gui.controls_panel import ControlsPanel
+from gemscanner.gui.reconstruction_panel import ReconstructionPanel
 from gemscanner.gui.worker import HardwareWorker
 
 
@@ -20,6 +21,7 @@ class MainWindow(QMainWindow):
         self.queue = QueuePanel()
         self.wizard = WizardPanel()
         self.controls = ControlsPanel()
+        self.reconstruction = ReconstructionPanel()
         self.queue.set_gems(project.gems)
 
         cam_cfg = project.camera or {}
@@ -31,6 +33,7 @@ class MainWindow(QMainWindow):
         left = QVBoxLayout()
         left.addWidget(self.wizard)
         left.addWidget(self.controls)
+        left.addWidget(self.reconstruction)
         left.addWidget(self.queue, 1)
         root.addLayout(left, 0)
         root.addWidget(self.preview, 1)
@@ -123,7 +126,8 @@ class MainWindow(QMainWindow):
             return
         out = gem.out or os.path.join("scans", gem.name)
         self.worker.post("reconstruct", out_dir=out,
-                         holder_mask_rows=gem.holder_mask_rows, smooth=10)
+                         holder_mask_rows=gem.holder_mask_rows,
+                         **self.reconstruction.selected_kwargs())
 
     def _on_progress(self, op, done, total):
         self.wizard.progress.setValue(int(done * 100 / max(total, 1)))

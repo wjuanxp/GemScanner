@@ -55,9 +55,13 @@ class ScanSession:
         return ScanController(self.camera, self.stage).run(
             out_dir, params, progress=progress, cancel=cancel)
 
-    def reconstruct(self, out_dir, holder_mask_rows=0, smooth=0):
+    def reconstruct(self, out_dir, holder_mask_rows=0, smooth=0,
+                    method="strip", edge_median_rows=0, axial_median_rows=0):
         mesh = reconstruct_dataset(
-            out_dir, ReconstructionParams(holder_mask_rows=holder_mask_rows))
+            out_dir, ReconstructionParams(
+                holder_mask_rows=holder_mask_rows, method=method,
+                edge_median_rows=edge_median_rows,
+                axial_median_rows=axial_median_rows))
         mesh = smooth_mesh(mesh, smooth)
         export_mesh(mesh, os.path.join(out_dir, "gem.stl"))
         return mesh, bool(mesh.is_watertight), tuple(mesh.bounding_box.extents)

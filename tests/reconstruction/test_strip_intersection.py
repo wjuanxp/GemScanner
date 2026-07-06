@@ -1,8 +1,48 @@
 import numpy as np
 from gemscanner.synthetic.generator import generate_ellipsoid_scan
 from gemscanner.storage.dataset import load_dataset
-from gemscanner.reconstruction.strip_intersection import StripIntersectionReconstructor
+from gemscanner.reconstruction.strip_intersection import (
+    StripIntersectionReconstructor, median_smooth_spans)
+from gemscanner.reconstruction.base import ReconstructionParams
 from gemscanner.geometry.polygon import polygon_area
+
+
+def test_reconstruct_edge_median_is_wired(tmp_path):
+    out = generate_ellipsoid_scan(str(tmp_path / "s"), rx=4, ry=3, rz=5,
+                                  n_views=60, mm_per_px=0.05, width=400, height=400)
+    ds = load_dataset(out)
+    r = StripIntersectionReconstructor()
+    base = r.reconstruct(ds, ReconstructionParams())
+    boxed = r.reconstruct(ds, ReconstructionParams(edge_median_rows=999))
+    assert abs(boxed.volume - base.volume) > 0.1 * base.volume   # param consumed
+
+
+def test_reconstruct_axial_median_is_wired(tmp_path):
+    out = generate_ellipsoid_scan(str(tmp_path / "s"), rx=4, ry=3, rz=5,
+                                  n_views=60, mm_per_px=0.05, width=400, height=400)
+    ds = load_dataset(out)
+    r = StripIntersectionReconstructor()
+    base = r.reconstruct(ds, ReconstructionParams())
+    flat = r.reconstruct(ds, ReconstructionParams(axial_median_rows=999))
+    assert abs(flat.volume - base.volume) > 0.1 * base.volume     # param consumed
+
+
+def test_median_smooth_spans_removes_edge_outlier():
+    spans = np.array([[10, 20], [10, 20], [10, 50], [10, 20], [10, 20]], float)
+    out = median_smooth_spans(spans, 3)
+    assert out[2, 1] == 20         # right edge outlier pulled to neighbour median
+    assert out[0, 0] == 10
+
+
+def test_median_smooth_spans_leaves_invalid_rows_untouched():
+    spans = np.array([[-1, -1], [10, 20], [12, 22], [10, 20], [-1, -1]], float)
+    out = median_smooth_spans(spans, 3)
+    assert (out[0] == -1).all() and (out[-1] == -1).all()
+
+
+def test_median_smooth_spans_window_zero_is_identity():
+    spans = np.array([[10, 20], [11, 21]], float)
+    assert np.allclose(median_smooth_spans(spans, 0), spans)
 
 def test_midplane_cross_section_matches_ellipse_area(tmp_path):
     out = generate_ellipsoid_scan(str(tmp_path / "scan"), rx=4, ry=3, rz=5,

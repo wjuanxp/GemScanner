@@ -44,6 +44,23 @@ def test_queue_panel_add_and_select(qtbot):
     assert seen[-1] == 2
 
 
+def test_reconstruction_panel_choices_map_to_params(qtbot):
+    from gemscanner.gui.reconstruction_panel import ReconstructionPanel
+    p = ReconstructionPanel()
+    qtbot.addWidget(p)
+    # default: fast strip visual hull, no de-terracing
+    assert p.selected_kwargs() == {
+        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 0}
+    p.set_index(1)                                  # "Smooth edges (recommended)"
+    assert p.selected_kwargs() == {
+        "method": "strip", "edge_median_rows": 9, "axial_median_rows": 0}
+    p.set_index(2)                                  # "Smooth surface"
+    assert p.selected_kwargs() == {
+        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 9}
+    p.set_index(3)                                  # "High accuracy (slow)"
+    assert p.selected_kwargs()["method"] == "soft_hull"
+
+
 def test_wizard_panel_steps_and_signals(qtbot):
     w = WizardPanel()
     qtbot.addWidget(w)
@@ -126,6 +143,29 @@ def test_main_window_gem_select_updates_controls_and_worker(qtbot):
     win.queue.select(1)
     assert win.controls.exposure_us() == 800.0
     assert win.controls.gain() == 6.0
+    win.close()
+
+
+def test_main_window_reconstruct_uses_selected_method(qtbot):
+    fw = FakeFirmware()
+    stage = RotaryStage(fw)
+    cam = SceneCamera(fw, rx=4, ry=3, rz=5, mm_per_px=0.05, width=200, height=200)
+    session = ScanSession(ScannerConfig(camera_backend="mock"), camera=cam, stage=stage)
+    project = Project(gems=[GemJob(name="ruby-01")])
+    win = MainWindow(project, session)
+    qtbot.addWidget(win)
+    posted = {}
+    win.worker.post = lambda op, **kw: posted.update(dict(op=op, **kw))
+
+    win.reconstruction.set_index(3)          # "High accuracy (slow)" -> soft hull
+    win._start_reconstruct()
+    assert posted["op"] == "reconstruct"
+    assert posted["method"] == "soft_hull"
+
+    win.reconstruction.set_index(1)          # "Smooth edges" -> edge median
+    win._start_reconstruct()
+    assert posted["method"] == "strip"
+    assert posted["edge_median_rows"] == 9
     win.close()
 
 

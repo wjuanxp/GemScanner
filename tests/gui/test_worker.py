@@ -52,6 +52,27 @@ def test_calibrate_op_emits_result(qtbot):
         w.wait(3000)
 
 
+def test_reconstruct_op_forwards_recon_kwargs(qtbot):
+    class RecSession:
+        def __init__(self):
+            self.kw = None
+        def reconstruct(self, out_dir, **kw):
+            self.kw = kw
+            return (None, True, (1.0, 2.0, 3.0))
+
+    w = HardwareWorker(RecSession())
+    w.start()
+    try:
+        with qtbot.waitSignal(w.result, timeout=3000):
+            w.post("reconstruct", out_dir="x", holder_mask_rows=2,
+                   method="soft_hull", edge_median_rows=9, axial_median_rows=0)
+        assert w._session.kw["method"] == "soft_hull"
+        assert w._session.kw["edge_median_rows"] == 9
+    finally:
+        w.shutdown()
+        w.wait(3000)
+
+
 def test_worker_applies_pending_exposure_before_grab(qtbot):
     from gemscanner.camera.base import CameraBackend
 

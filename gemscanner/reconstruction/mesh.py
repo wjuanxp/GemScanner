@@ -4,6 +4,25 @@ import trimesh
 from gemscanner.geometry.polygon import polygon_centroid, polygon_area, ray_radius
 
 
+def median_smooth_axial(rad, window):
+    """Median-filter an (M, n_radial) ring-radius field along the axial (z) axis.
+
+    Edge-preserving: removes per-row terracing (rank-rejection of outlier rows)
+    while keeping real facet steps crisp. window<2 is identity.
+    """
+    rad = np.asarray(rad, dtype=float)
+    if not window or window < 2:
+        return rad
+    M = rad.shape[0]
+    half = window // 2
+    out = np.empty_like(rad)
+    for i in range(M):
+        lo = max(0, i - half)
+        hi = min(M, i + half + 1)
+        out[i] = np.median(rad[lo:hi], axis=0)
+    return out
+
+
 def _largest_contiguous(slices):
     best = (0, 0)
     cur_start = None
@@ -18,19 +37,20 @@ def _largest_contiguous(slices):
     return slices[best[0]:best[1]]
 
 
-def loft_slices_to_mesh(slices, n_radial=180):
+def loft_slices_to_mesh(slices, n_radial=180, axial_median_rows=0):
     run = _largest_contiguous(slices)
     if len(run) < 2:
         raise ValueError("need at least two non-empty slices to build a mesh")
 
     angles = np.linspace(0, 2 * np.pi, n_radial, endpoint=False)
+    dirs = np.column_stack([np.cos(angles), np.sin(angles)])
+    centroids = [polygon_centroid(s.polygon) for s in run]
+    rad = np.array([[ray_radius(s.polygon, c, a) for a in angles]
+                    for s, c in zip(run, centroids)])   # (M, n_radial)
+    rad = median_smooth_axial(rad, axial_median_rows)    # de-terrace, facet-safe
     rings = []
-    for s in run:
-        c = polygon_centroid(s.polygon)
-        pts = np.array([
-            c + ray_radius(s.polygon, c, a) * np.array([np.cos(a), np.sin(a)])
-            for a in angles
-        ])
+    for k, s in enumerate(run):
+        pts = centroids[k] + rad[k][:, None] * dirs
         rings.append(np.column_stack([pts[:, 0], pts[:, 1],
                                       np.full(n_radial, s.z_mm)]))
     rings = np.array(rings)               # (M, n_radial, 3)

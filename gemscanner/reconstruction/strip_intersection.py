@@ -6,6 +6,37 @@ from gemscanner.geometry.halfplane import clip_convex_polygon
 from gemscanner.reconstruction.base import ReconstructionParams, SliceResult
 
 
+def median_smooth_spans(spans, window):
+    """Median-filter silhouette left/right edge columns along v (image space).
+
+    Rows with L<0 (empty) are left untouched; smoothing runs only over contiguous
+    valid segments so facet edges survive while per-row edge outliers (terracing
+    source) are rejected. window<2 is identity.
+    """
+    spans = np.asarray(spans, dtype=float)
+    if not window or window < 2:
+        return spans
+    out = spans.copy()
+    valid = spans[:, 0] >= 0
+    half = window // 2
+    n = len(spans)
+    i = 0
+    while i < n:
+        if not valid[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and valid[j]:
+            j += 1
+        for r in range(i, j):
+            lo = max(i, r - half)
+            hi = min(j, r + half + 1)
+            out[r, 0] = np.median(spans[lo:hi, 0])
+            out[r, 1] = np.median(spans[lo:hi, 1])
+        i = j
+    return out
+
+
 class StripIntersectionReconstructor:
     def slice_cross_sections(self, dataset, params=None):
         params = params if params is not None else ReconstructionParams()
@@ -17,7 +48,7 @@ class StripIntersectionReconstructor:
         for i in range(dataset.frame_count()):
             img = dataset.load_frame(i)
             mask = extract_silhouette(img, params.threshold, params.holder_mask_rows)
-            spans = row_spans(mask)
+            spans = median_smooth_spans(row_spans(mask), params.edge_median_rows)
             th = math.radians(m.angles_deg[i])
             normal = np.array([math.cos(th), -math.sin(th)])
             frames.append((spans, normal))
@@ -54,4 +85,5 @@ class StripIntersectionReconstructor:
         from gemscanner.reconstruction.mesh import loft_slices_to_mesh
         params = params if params is not None else ReconstructionParams()
         slices = self.slice_cross_sections(dataset, params)
-        return loft_slices_to_mesh(slices, params.n_radial)
+        return loft_slices_to_mesh(slices, params.n_radial,
+                                   params.axial_median_rows)
