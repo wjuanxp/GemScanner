@@ -37,6 +37,26 @@ def test_session_grab_and_analyze():
     assert a.bbox is not None                 # ellipsoid silhouette present
 
 
+def test_session_reconstruct_forwards_method_and_deterrace(tmp_path, monkeypatch):
+    import trimesh
+    import gemscanner.gui.session as sess
+    captured = {}
+
+    def fake_reconstruct_dataset(out, params):
+        captured["params"] = params
+        return trimesh.creation.box((2.0, 2.0, 2.0))   # dummy watertight mesh
+
+    monkeypatch.setattr(sess, "reconstruct_dataset", fake_reconstruct_dataset)
+    s = _session()
+    s.reconstruct(str(tmp_path), holder_mask_rows=7, method="soft_hull",
+                  edge_median_rows=9, axial_median_rows=3, smooth=0)
+    p = captured["params"]
+    assert p.method == "soft_hull"
+    assert p.edge_median_rows == 9
+    assert p.axial_median_rows == 3
+    assert p.holder_mask_rows == 7
+
+
 def test_session_calibrate_scan_reconstruct(tmp_path):
     s = _session()
     axis, amp = s.calibrate_axis(n_probe=12)
