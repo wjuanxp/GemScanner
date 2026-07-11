@@ -52,3 +52,33 @@ def fit_affine_support(z, h, mask, min_inliers=8, resid_tol_mm=0.05):
     fit = beta + alpha * zz
     rms = float(np.sqrt(np.mean((hh - fit) ** 2)))   # rms over inliers only
     return float(alpha), float(beta), rms, int(keep.sum())
+
+
+def seed_facets(mesh, merge_deg=8.0, min_area_frac=0.005):
+    """Cluster mesh face normals (area-weighted) into distinct facet seeds."""
+    normals = np.asarray(mesh.face_normals, float)
+    areas = np.asarray(mesh.area_faces, float)
+    order = np.argsort(areas)[::-1]
+    cos_tol = np.cos(np.radians(merge_deg))
+    clusters = []   # each: [sum_area, accum_normal(weighted)]
+    for i in order:
+        n = normals[i]; w = areas[i]
+        for cl in clusters:
+            ref = cl[1] / np.linalg.norm(cl[1])
+            if float(np.dot(n, ref)) >= cos_tol:
+                cl[0] += w; cl[1] += w * n
+                break
+        else:
+            clusters.append([w, w * n.copy()])
+    total = float(areas.sum())
+    seeds = []
+    for area_sum, accum in clusters:
+        if area_sum < min_area_frac * total:
+            continue
+        nrm = accum / np.linalg.norm(accum)
+        seeds.append({"normal": nrm,
+                      "azimuth": float(np.arctan2(-nrm[1], nrm[0])),
+                      "tilt": float(nrm[2]),
+                      "area": float(area_sum)})
+    seeds.sort(key=lambda s: s["area"], reverse=True)
+    return seeds
