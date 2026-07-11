@@ -199,6 +199,16 @@ alongside the STL for gemology (facet count, angles, symmetry).
 - No multi-axis / tilt-scanning to recover table/culet by tangent (hardware change).
 - No change to capture, calibration, or the other reconstruction methods.
 
+## 9a. Build order (approved)
+
+Synthetic-GT-first, strict TDD:
+1. `generate_polyhedron_scan(...)` + exact-recovery unit tests (planes/edges/
+   meet-points to tight tolerance) — lock correctness before real data.
+2. Support sampling + affine tangent fit (core `facet_fit.py`).
+3. Gauss-sphere seed + refit + half-space assembly; fallback path.
+4. gem04 tuning of acceptance thresholds; dimensional comparison vs `gem.stl`.
+5. `ReconstructionParams`/pipeline wiring + GUI "Faceted gem (planar)".
+
 ## 10. Open items for the implementation plan
 
 - Exact clustering method + threshold for the Gauss-sphere seed.
