@@ -15,6 +15,13 @@ class ReconstructionParams:
     # "strip" = fast per-slice visual hull (default); "soft_hull" = anti-aliased
     # volumetric visual hull + marching cubes (metrology-grade, needs scikit-image)
     method: str = "strip"
+    # facet method (method="facet"): unsupervised facet-plane recovery
+    facet_min_inliers: int = 12
+    facet_merge_deg: float = 6.0
+    facet_view_search: int = 4
+    facet_axial_cos: float = 0.95      # |normal_z| above this = table/culet, not tangent
+    facet_planarity_tol_mm: float = 0.05
+    facet_fallback: bool = True
 
 
 @dataclass
