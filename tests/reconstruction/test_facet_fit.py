@@ -40,3 +40,4 @@ def test_seed_facets_recovers_distinct_orientations():
         horiz_len = np.hypot(a, b)
         if horiz_len > 1e-6:  # only check when horizontal component is significant
             assert abs(np.cos(s["azimuth"]) - a / horiz_len) < 1e-6
+            assert abs(np.sin(s["azimuth"]) + b / horiz_len) < 1e-6
