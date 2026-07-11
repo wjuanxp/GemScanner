@@ -4,19 +4,24 @@ import trimesh
 
 
 def make_toy_gem(n=8, r_girdle=5.0, r_table=3.0, z_table=2.0,
-                 z_girdle=0.0, z_culet=-4.0):
+                 z_girdle_top=0.4, z_girdle_bottom=-0.4, z_culet=-4.0):
     """Return (vertices, planes) for a convex faceted 'toy gem'.
 
-    Geometry: regular n-gon girdle at z_girdle, table polygon (radius r_table)
-    at z_table, single apex culet at z_culet. Planes are the unique outward
+    Geometry: a girdle BAND (two n-gon rings at radius r_girdle, one at
+    z_girdle_top and one at z_girdle_bottom) gives n vertical girdle facets; a
+    smaller table ring up top gives n crown facets + a horizontal table; a
+    single culet apex gives n pavilion facets. Because the two girdle rings
+    share the same radius, each girdle facet is a vertical planar quad, and the
+    parallel table/girdle chords make each crown facet a planar quad too -> the
+    convex hull has exactly 3n+1 distinct planes. planes are the unique outward
     face planes (normal unit, body on normal.x <= d)."""
     a = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    girdle = np.column_stack([r_girdle * np.cos(a), r_girdle * np.sin(a),
-                              np.full(n, z_girdle)])
-    table = np.column_stack([r_table * np.cos(a), r_table * np.sin(a),
-                             np.full(n, z_table)])
+    cos, sin = np.cos(a), np.sin(a)
+    g_top = np.column_stack([r_girdle * cos, r_girdle * sin, np.full(n, z_girdle_top)])
+    g_bot = np.column_stack([r_girdle * cos, r_girdle * sin, np.full(n, z_girdle_bottom)])
+    table = np.column_stack([r_table * cos, r_table * sin, np.full(n, z_table)])
     culet = np.array([[0.0, 0.0, z_culet]])
-    verts = np.vstack([girdle, table, culet])
+    verts = np.vstack([g_top, g_bot, table, culet])
     hull = trimesh.Trimesh(vertices=verts).convex_hull
     planes = unique_face_planes(hull)
     return np.asarray(hull.vertices, float), planes
