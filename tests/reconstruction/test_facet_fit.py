@@ -11,6 +11,8 @@ def test_plane_from_affine_45deg():
     a, b, c, d = plane_from_affine(0.0, alpha=-1.0, beta=3.0)
     assert np.allclose([a, b, c], [np.sqrt(0.5), 0.0, np.sqrt(0.5)], atol=1e-9)
     assert np.isclose(a*a + b*b + c*c, 1.0)
+    # d = beta*m with m=1/sqrt(1+alpha^2)=1/sqrt(2); verifies the d-scaling (m!=1 here)
+    assert np.isclose(d, 3.0 / np.sqrt(2.0))
 
 def test_fit_affine_robust_to_outliers():
     z = np.linspace(-4, 4, 60)
@@ -20,3 +22,4 @@ def test_fit_affine_robust_to_outliers():
     alpha, beta, rms, n = fit_affine_support(z, h, mask)
     assert abs(alpha - 0.5) < 0.02 and abs(beta - 2.0) < 0.05
     assert n >= 50
+    assert rms < 0.01

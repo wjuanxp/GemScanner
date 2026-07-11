@@ -25,6 +25,8 @@ def _theilsen(z, h):
     dz = zz[:, None] - zz[None, :]
     dh = hh[:, None] - hh[None, :]
     ok = np.abs(dz) > 1e-9
+    if not ok.any():                 # all z identical (degenerate) -> no slope
+        return np.nan, np.nan
     slope = np.median(dh[ok] / dz[ok])
     intercept = np.median(hh - slope * zz)
     return float(slope), float(intercept)
@@ -39,11 +41,14 @@ def fit_affine_support(z, h, mask, min_inliers=8, resid_tol_mm=0.05):
         return np.nan, np.nan, np.nan, int(sel.sum())
     zz, hh = z[sel], h[sel]
     alpha, beta = _theilsen(zz, hh)
+    if np.isnan(alpha):
+        return np.nan, np.nan, np.nan, int(sel.sum())
     resid = np.abs(hh - (beta + alpha * zz))
     keep = resid <= max(resid_tol_mm, np.median(resid) * 3)
     if keep.sum() >= min_inliers:
-        A = np.column_stack([zz[keep], np.ones(keep.sum())])
-        (alpha, beta), *_ = np.linalg.lstsq(A, hh[keep], rcond=None)
+        zz, hh = zz[keep], hh[keep]              # scope fit + rms to inliers
+        A = np.column_stack([zz, np.ones(len(zz))])
+        (alpha, beta), *_ = np.linalg.lstsq(A, hh, rcond=None)
     fit = beta + alpha * zz
-    rms = float(np.sqrt(np.mean((hh - fit) ** 2)))
+    rms = float(np.sqrt(np.mean((hh - fit) ** 2)))   # rms over inliers only
     return float(alpha), float(beta), rms, int(keep.sum())
