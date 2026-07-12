@@ -18,6 +18,8 @@ class ReconstructionPanel(QWidget):
          {"method": "strip", "edge_median_rows": 0, "axial_median_rows": 9}),
         ("High accuracy (slow)",
          {"method": "soft_hull", "edge_median_rows": 0, "axial_median_rows": 0}),
+        ("Faceted gem (planar)",
+         {"method": "facet", "edge_median_rows": 0, "axial_median_rows": 0}),
     ]
 
     reconstructionChanged = Signal()
