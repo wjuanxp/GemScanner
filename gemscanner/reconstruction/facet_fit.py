@@ -214,30 +214,23 @@ def planes_to_polytope(planes):
     return hull, np.asarray(hull.vertices, float), np.asarray(edges, int)
 
 
-def _median_along(a, window):
-    """Rank-based denoise along a 1D array (facet-preserving, like the
-    shipped de-terracing filters). window<2 is identity."""
-    if not window or window < 2:
-        return a
-    out = a.copy()
-    half = window // 2
-    for i in range(len(a)):
-        seg = a[max(0, i - half):i + half + 1]
-        seg = seg[np.isfinite(seg)]
-        if seg.size:
-            out[i] = np.median(seg)
-    return out
-
-
-def segment_support(z, h, median_rows=9, slope_break=0.35,
+def segment_support(z, h, median_rows=9, slope_jump=0.12,
                     min_seg_mm=0.25, min_rows=8):
     """Split one view's raw support column H(z) into affine segments.
 
     Each segment is a candidate facet trace (a facet's support is affine in z
-    while it is the active tangent). Median-denoise along z first (rank-based,
-    keeps real slope breaks sharp), then break where the local slope changes
-    faster than `slope_break` (1/mm). Returns [{z_lo, z_hi, alpha, beta, rms,
-    n}] sorted by z_lo; [] if fewer than 5 finite samples."""
+    while it is the active tangent). Both stages are rank-robust with NO
+    pre-filtering of the signal (a blanket median staircases sloped columns;
+    despiking is edge/ramp-biased -- both verified failure modes):
+      - local slope via sliding-window Theil-Sen (median of pairwise slopes:
+        single outliers corrupt a minority of pairs),
+      - breaks at local maxima of the two-sided slope jump
+        |slope(i+k) - slope(i-k)| above `slope_jump`,
+      - a transition zone of k rows around each break is trimmed, then each
+        segment is fit with the frozen robust fit_affine_support (rms over
+        inliers).
+    Returns [{z_lo, z_hi, alpha, beta, rms, n}] sorted by z_lo; [] if fewer
+    than 5 finite samples."""
     z = np.asarray(z, float); h = np.asarray(h, float)
     ok = np.isfinite(h) & np.isfinite(z)
     z, h = z[ok], h[ok]
@@ -245,26 +238,57 @@ def segment_support(z, h, median_rows=9, slope_break=0.35,
         return []
     order = np.argsort(z)
     z, h = z[order], h[order]
-    h = _median_along(h, median_rows)
-    slope = np.gradient(h, z)
-    dslope = np.abs(np.gradient(slope, z))
+    n = len(z)
+    k = max(2, median_rows // 2)
+
+    def _fit(i0, i1):
+        m = np.zeros(n, bool); m[i0:i1] = True
+        alpha, beta, rms, nin = fit_affine_support(
+            z, h, m, min_inliers=max(4, min_rows))
+        if np.isnan(alpha) or (z[i1 - 1] - z[i0]) < min_seg_mm:
+            return None
+        return {"z_lo": float(z[i0]), "z_hi": float(z[i1 - 1]),
+                "alpha": float(alpha), "beta": float(beta),
+                "rms": float(rms), "n": int(nin)}
+
+    if n < 4 * k + 2:                      # too short to segment: one fit
+        s = _fit(0, n)
+        return [s] if s else []
+
+    slope = np.zeros(n)                    # sliding-window Theil-Sen slope
+    for i in range(k, n - k):
+        zz = z[i - k:i + k + 1]; hh = h[i - k:i + k + 1]
+        dzm = zz[:, None] - zz[None, :]
+        dhm = hh[:, None] - hh[None, :]
+        sel = dzm > 1e-12
+        slope[i] = np.median(dhm[sel] / dzm[sel])
+    slope[:k] = slope[k]; slope[n - k:] = slope[n - k - 1]
+
+    jump = np.zeros(n)
+    jump[2 * k:n - 2 * k] = np.abs(slope[3 * k:n - k] - slope[k:n - 3 * k])
+    above = jump > slope_jump
+    breaks = []
+    i = 0
+    while i < n:                           # one break per contiguous run
+        if above[i]:
+            j = i
+            while j < n and above[j]:
+                j += 1
+            breaks.append(i + int(np.argmax(jump[i:j])))
+            i = j
+        else:
+            i += 1
 
     segs = []
-    start = 0
-    def _emit(i0, i1):
-        zz, hh = z[i0:i1], h[i0:i1]
-        if len(zz) < max(4, min_rows) or (zz[-1] - zz[0]) < min_seg_mm:
-            return
-        A = np.polyfit(zz, hh, 1)
-        rms = float(np.sqrt(np.mean((hh - np.polyval(A, zz)) ** 2)))
-        segs.append({"z_lo": float(zz[0]), "z_hi": float(zz[-1]),
-                     "alpha": float(A[0]), "beta": float(A[1]),
-                     "rms": rms, "n": int(len(zz))})
-    for i in range(1, len(z)):
-        if dslope[i] > slope_break and (z[i] - z[start]) > min_seg_mm:
-            _emit(start, i)
-            start = i
-    _emit(start, len(z))
+    prev = 0
+    for b in breaks:
+        s = _fit(prev, max(prev, b - k))   # trim transition zone
+        if s:
+            segs.append(s)
+        prev = b + k
+    s = _fit(prev, n)
+    if s:
+        segs.append(s)
     return segs
 
 
