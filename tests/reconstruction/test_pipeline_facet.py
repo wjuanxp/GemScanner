@@ -1,4 +1,3 @@
-import numpy as np
 from gemscanner.synthetic.toy_gem import make_toy_gem
 from gemscanner.synthetic.generator import (generate_polyhedron_scan,
                                             generate_ellipsoid_scan)
