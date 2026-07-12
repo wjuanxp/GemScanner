@@ -63,11 +63,15 @@ front-end was discarding it.
 
 1. **Support maps** — existing `support_maps(dataset, params)`. Unchanged.
 2. **Per-view affine segmentation** (new, productionized spike):
-   for each view `i`, median-filter `H_right(·, i)` along z (window
-   `facet_seg_median_rows`, default 9), compute local slope `dH/dz`, split into
-   segments where the slope derivative exceeds `facet_slope_break` (default
-   0.35 /mm) with minimum segment span `facet_min_seg_mm` (default 0.25 mm) and
-   ≥ `facet_min_inliers` rows. Per segment record `(i, z_lo, z_hi, α, β, rms)`.
+   for each view `i`, estimate the local slope `dH/dz` by sliding-window
+   Theil–Sen (window `facet_seg_median_rows`, default 9 — rank-robust, no
+   pre-filtering: a blanket median staircases sloped columns), split into
+   segments at run-maxima of the two-sided slope jump above `facet_slope_jump`
+   (default 0.12), trim the k-row transition zone, and fit each segment with
+   the frozen robust `fit_affine_support`, with minimum segment span
+   `facet_min_seg_mm` (default 0.25 mm) and ≥ `facet_min_inliers` rows. Per
+   segment record `(i, z_lo, z_hi, α, β, rms)`. (Revised from the original
+   slope-derivative criterion, which was numerically verified noise-fragile.)
 3. **Cross-view clustering into facets** (new): a real facet is tangent-visible
    over a contiguous azimuth run and exactly edge-on at its centre. Cluster
    segments across neighbouring views by z-band overlap (≥50 %) and slope
@@ -98,7 +102,7 @@ method and the fallback target.)
 
 ```
 facet_seg_median_rows: int = 9      # z-median before segmentation
-facet_slope_break: float = 0.35    # d(slope)/dz break threshold (1/mm)
+facet_slope_jump: float = 0.12     # min two-sided slope jump between facets
 facet_min_seg_mm: float = 0.25     # min segment z-span
 facet_min_views: int = 3           # min consecutive views per facet cluster
 facet_slope_tol: float = 0.15      # slope match for cross-view clustering
