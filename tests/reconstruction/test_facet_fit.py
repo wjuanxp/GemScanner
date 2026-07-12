@@ -1,5 +1,5 @@
 import numpy as np
-from gemscanner.reconstruction.facet_fit import plane_from_affine, fit_affine_support, seed_facets, segment_support
+from gemscanner.reconstruction.facet_fit import plane_from_affine, fit_affine_support, seed_facets, segment_support, cluster_segments
 from gemscanner.synthetic.toy_gem import make_toy_gem
 import trimesh
 
@@ -67,3 +67,38 @@ def test_segment_support_handles_nans_and_tiny_input():
     segs = segment_support(z, h)
     assert len(segs) >= 1 and abs(segs[0]["alpha"] - 0.3) < 0.05
     assert segment_support(z[:3], h[:3]) == []
+
+def _seg(z_lo, z_hi, alpha, rms=0.005, n=20):
+    return {"z_lo": z_lo, "z_hi": z_hi, "alpha": alpha,
+            "beta": 0.0, "rms": rms, "n": n}
+
+def test_cluster_segments_chains_across_views_with_wraparound():
+    V = 12
+    segs = [[] for _ in range(V)]
+    # facet A: views 10,11,0,1,2 (wraps), z [0,2]; widest+cleanest at view 0
+    for i, (span, rms) in zip([10, 11, 0, 1, 2],
+                              [(1.6, .01), (1.8, .008), (2.0, .003),
+                               (1.8, .008), (1.6, .01)]):
+        segs[i].append(_seg(0.0, span, alpha=-0.5 + 0.01 * i % 3, rms=rms))
+    # facet B: views 5,6,7, z [-2,-0.5], different slope
+    for i in [5, 6, 7]:
+        segs[i].append(_seg(-2.0, -0.5, alpha=1.2, rms=0.005))
+    # noise: lone segment in view 3 (chain too short)
+    segs[3].append(_seg(0.5, 1.0, alpha=0.9))
+    chains = cluster_segments(segs, min_views=3)
+    assert len(chains) == 2
+    a = next(c for c in chains if c["seg"]["alpha"] < 0)
+    b = next(c for c in chains if c["seg"]["alpha"] > 1)
+    assert a["view"] == 0                      # max z-span member wins
+    assert set(a["views"]) == {10, 11, 0, 1, 2}
+    assert set(b["views"]) == {5, 6, 7}
+
+def test_cluster_segments_separates_stacked_facets_same_azimuth():
+    # step cut: two tiers at the SAME views, different z bands -> two chains
+    V = 6
+    segs = [[_seg(-2.0, -0.8, alpha=0.5), _seg(-0.6, 0.8, alpha=-0.9)]
+            for _ in range(V)]
+    chains = cluster_segments(segs, min_views=3)
+    assert len(chains) == 2
+    zl = sorted(c["seg"]["z_lo"] for c in chains)
+    assert zl[0] == -2.0 and zl[1] == -0.6
