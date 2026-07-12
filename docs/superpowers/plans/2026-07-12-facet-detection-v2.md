@@ -243,11 +243,25 @@ def cluster_segments(segs_by_view, min_views=3, slope_tol=0.15,
 
     A real facet is tangent-visible over a contiguous azimuth arc, so its
     trace persists across neighbouring views with similar slope and z-band.
-    Each chain of >= min_views becomes a facet candidate; its edge-on view is
-    the member with the largest z-span (facet fully visible), rms tie-break."""
+    Chains grow in BOTH directions from the seed view (forward-only chaining
+    splits arcs that wrap past the seed -- verified failure). Each chain of
+    >= min_views becomes a facet candidate; its edge-on view is the member
+    with the largest z-span (facet fully visible), rms tie-break."""
     V = len(segs_by_view)
     used = [[False] * len(s) for s in segs_by_view]
     chains = []
+
+    def _match(i, cur):
+        best = None
+        for k, s in enumerate(segs_by_view[i]):
+            if used[i][k]:
+                continue
+            if (abs(s["alpha"] - cur["alpha"]) <= slope_tol and
+                    _z_overlap_frac(cur, s) >= overlap_frac):
+                if best is None or s["rms"] < segs_by_view[i][best]["rms"]:
+                    best = k
+        return best
+
     for i0 in range(V):
         for k0, seed in enumerate(segs_by_view[i0]):
             if used[i0][k0]:
@@ -257,19 +271,21 @@ def cluster_segments(segs_by_view, min_views=3, slope_tol=0.15,
             cur = seed
             for step in range(1, V):           # extend forward with wraparound
                 i = (i0 + step) % V
-                best = None
-                for k, s in enumerate(segs_by_view[i]):
-                    if used[i][k]:
-                        continue
-                    if (abs(s["alpha"] - cur["alpha"]) <= slope_tol and
-                            _z_overlap_frac(cur, s) >= overlap_frac):
-                        if best is None or s["rms"] < segs_by_view[i][best]["rms"]:
-                            best = k
-                if best is None:
+                b = _match(i, cur)
+                if b is None:
                     break
-                used[i][best] = True
-                cur = segs_by_view[i][best]
+                used[i][b] = True
+                cur = segs_by_view[i][b]
                 chain.append((i, cur))
+            cur = seed
+            for step in range(1, V - len(chain) + 1):   # extend backward
+                i = (i0 - step) % V
+                b = _match(i, cur)
+                if b is None:
+                    break
+                used[i][b] = True
+                cur = segs_by_view[i][b]
+                chain.insert(0, (i, cur))
             if len(chain) >= min_views:
                 # edge-on: max z-span, tie-break min rms
                 view, seg = max(chain, key=lambda t: (t[1]["z_hi"] - t[1]["z_lo"],
