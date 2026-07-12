@@ -128,7 +128,7 @@ A parametric convex faceted solid (table + crown + girdle + pavilion + culet) an
 **Interfaces:**
 - Consumes: `trimesh`.
 - Produces:
-  - `make_toy_gem(n=8, r_girdle=5.0, r_table=3.0, z_table=2.0, z_girdle=0.0, z_culet=-4.0) -> (vertices (V,3) float, planes list[(normal (3,) unit, d float)])`. Solid: regular `n`-gon girdle at `z_girdle`, table polygon (radius `r_table`) at `z_table`, single apex culet at `z_culet`. Outward normals, body on `normal·x <= d` side.
+  - `make_toy_gem(n=8, r_girdle=5.0, r_table=3.0, z_table=2.0, z_girdle_top=0.4, z_girdle_bottom=-0.4, z_culet=-4.0) -> (vertices (V,3) float, planes list[(normal (3,) unit, d float)])`. Solid: a girdle **band** — two `n`-gon rings at radius `r_girdle`, at `z_girdle_top` and `z_girdle_bottom` (this band creates the `n` **vertical** girdle facets); a smaller table polygon (radius `r_table`) at `z_table` (→ `n` crown + 1 table); a single apex culet at `z_culet` (→ `n` pavilion). Exactly `3n+1` distinct planes. Outward normals, body on `normal·x <= d` side.
   - `unique_face_planes(mesh, angle_tol_deg=1.0, offset_tol=1e-3) -> list[(normal (3,), d)]`: clusters a trimesh's coplanar triangles into distinct facet planes.
 
 - [ ] **Step 1: Write the failing test**
@@ -138,18 +138,21 @@ A parametric convex faceted solid (table + crown + girdle + pavilion + culet) an
 import numpy as np
 from gemscanner.synthetic.toy_gem import make_toy_gem, unique_face_planes
 
-def test_toy_gem_has_expected_facets():
+def test_toy_gem_has_all_four_facet_families():
     n = 8
     verts, planes = make_toy_gem(n=n)
     normals = np.array([p[0] for p in planes])
-    # exactly one horizontal top facet (the table), normal ~ +z
-    top = [p for p in planes if p[0][2] > 0.99]
-    assert len(top) == 1
-    # n vertical girdle facets (normal z-component ~ 0)
-    vertical = [p for p in planes if abs(p[0][2]) < 0.05]
-    assert len(vertical) == n
     # all normals unit length
     assert np.allclose(np.linalg.norm(normals, axis=1), 1.0, atol=1e-6)
+    top = [p for p in planes if p[0][2] > 0.99]            # table, +z
+    vertical = [p for p in planes if abs(p[0][2]) < 0.05]  # girdle, z~0
+    crown = [p for p in planes if 0.05 <= p[0][2] <= 0.99] # tilted up
+    pavilion = [p for p in planes if p[0][2] < -0.05]      # tilted down
+    assert len(top) == 1
+    assert len(vertical) == n
+    assert len(crown) == n
+    assert len(pavilion) == n
+    assert len(planes) == 3 * n + 1     # all four families, nothing else
 
 def test_unique_face_planes_dedupes_coplanar_triangles():
     verts, _ = make_toy_gem(n=6)
@@ -157,7 +160,7 @@ def test_unique_face_planes_dedupes_coplanar_triangles():
     hull = trimesh.Trimesh(vertices=verts).convex_hull
     planes = unique_face_planes(hull)
     # a hexagonal toy gem: 1 table + 6 girdle + 6 crown + 6 pavilion = 19 distinct planes
-    assert 15 <= len(planes) <= 21
+    assert len(planes) == 19
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -175,19 +178,22 @@ import trimesh
 
 
 def make_toy_gem(n=8, r_girdle=5.0, r_table=3.0, z_table=2.0,
-                 z_girdle=0.0, z_culet=-4.0):
+                 z_girdle_top=0.4, z_girdle_bottom=-0.4, z_culet=-4.0):
     """Return (vertices, planes) for a convex faceted 'toy gem'.
 
-    Geometry: regular n-gon girdle ring, a smaller table ring up top, a single
-    culet apex at the bottom. planes are the unique outward face planes
-    (normal unit, body on normal.x <= d)."""
+    Geometry: a girdle BAND (two n-gon rings at radius r_girdle, at
+    z_girdle_top and z_girdle_bottom) gives n vertical girdle facets; a smaller
+    table ring gives n crown facets + a table; a culet apex gives n pavilion
+    facets. Same-radius rings make each girdle facet a vertical planar quad ->
+    the convex hull has exactly 3n+1 distinct planes. planes are the unique
+    outward face planes (normal unit, body on normal.x <= d)."""
     a = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    girdle = np.column_stack([r_girdle * np.cos(a), r_girdle * np.sin(a),
-                              np.full(n, z_girdle)])
-    table = np.column_stack([r_table * np.cos(a), r_table * np.sin(a),
-                             np.full(n, z_table)])
+    cos, sin = np.cos(a), np.sin(a)
+    g_top = np.column_stack([r_girdle * cos, r_girdle * sin, np.full(n, z_girdle_top)])
+    g_bot = np.column_stack([r_girdle * cos, r_girdle * sin, np.full(n, z_girdle_bottom)])
+    table = np.column_stack([r_table * cos, r_table * sin, np.full(n, z_table)])
     culet = np.array([[0.0, 0.0, z_culet]])
-    verts = np.vstack([girdle, table, culet])
+    verts = np.vstack([g_top, g_bot, table, culet])
     hull = trimesh.Trimesh(vertices=verts).convex_hull
     planes = unique_face_planes(hull)
     return np.asarray(hull.vertices, float), planes
@@ -365,6 +371,8 @@ def test_plane_from_affine_45deg():
     a, b, c, d = plane_from_affine(0.0, alpha=-1.0, beta=3.0)
     assert np.allclose([a, b, c], [np.sqrt(0.5), 0.0, np.sqrt(0.5)], atol=1e-9)
     assert np.isclose(a*a + b*b + c*c, 1.0)
+    # d = beta*m with m=1/sqrt(2); verifies the d-scaling (m!=1 here)
+    assert np.isclose(d, 3.0 / np.sqrt(2.0))
 
 def test_fit_affine_robust_to_outliers():
     z = np.linspace(-4, 4, 60)
@@ -374,6 +382,7 @@ def test_fit_affine_robust_to_outliers():
     alpha, beta, rms, n = fit_affine_support(z, h, mask)
     assert abs(alpha - 0.5) < 0.02 and abs(beta - 2.0) < 0.05
     assert n >= 50
+    assert rms < 0.01                    # rms scoped to inliers, not outliers
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -412,6 +421,8 @@ def _theilsen(z, h):
     dz = zz[:, None] - zz[None, :]
     dh = hh[:, None] - hh[None, :]
     ok = np.abs(dz) > 1e-9
+    if not ok.any():                 # all z identical (degenerate) -> no slope
+        return np.nan, np.nan
     slope = np.median(dh[ok] / dz[ok])
     intercept = np.median(hh - slope * zz)
     return float(slope), float(intercept)
@@ -426,13 +437,16 @@ def fit_affine_support(z, h, mask, min_inliers=8, resid_tol_mm=0.05):
         return np.nan, np.nan, np.nan, int(sel.sum())
     zz, hh = z[sel], h[sel]
     alpha, beta = _theilsen(zz, hh)
+    if np.isnan(alpha):
+        return np.nan, np.nan, np.nan, int(sel.sum())
     resid = np.abs(hh - (beta + alpha * zz))
     keep = resid <= max(resid_tol_mm, np.median(resid) * 3)
     if keep.sum() >= min_inliers:
-        A = np.column_stack([zz[keep], np.ones(keep.sum())])
-        (alpha, beta), *_ = np.linalg.lstsq(A, hh[keep], rcond=None)
+        zz, hh = zz[keep], hh[keep]              # scope fit + rms to inliers
+        A = np.column_stack([zz, np.ones(len(zz))])
+        (alpha, beta), *_ = np.linalg.lstsq(A, hh, rcond=None)
     fit = beta + alpha * zz
-    rms = float(np.sqrt(np.mean((hh - fit) ** 2)))
+    rms = float(np.sqrt(np.mean((hh - fit) ** 2)))   # rms over inliers only
     return float(alpha), float(beta), rms, int(keep.sum())
 ```
 
@@ -661,14 +675,18 @@ def recover_planes(sm, seeds, params):
     return _merge_planes(planes, params.facet_merge_deg)
 
 
-def _merge_planes(planes, merge_deg):
+def _merge_planes(planes, merge_deg, d_reltol=0.02):
+    # d-tolerance is RELATIVE to gem scale (max |offset|) so merging works on
+    # any-sized stone -- a fixed mm threshold would over/under-merge on gem04.
     cos_tol = np.cos(np.radians(merge_deg))
+    scale = max((abs(p["plane"][3]) for p in planes), default=1.0) or 1.0
+    d_tol = d_reltol * scale
     out = []
     for p in planes:
         a, b, c, d = p["plane"]; n = np.array([a, b, c])
         for q in out:
             qa, qb, qc, qd = q["plane"]
-            if float(np.dot(n, [qa, qb, qc])) >= cos_tol and abs(d - qd) < 0.1:
+            if float(np.dot(n, [qa, qb, qc])) >= cos_tol and abs(d - qd) < d_tol:
                 if p["rms"] < q["rms"]:
                     q.update(p)
                 break
@@ -684,6 +702,10 @@ def _interior_point(halfspaces):
     A_ub = np.hstack([A, norm])
     c = np.zeros(A.shape[1] + 1); c[-1] = -1.0     # maximise radius
     res = linprog(c, A_ub=A_ub, b_ub=b, bounds=[(None, None)] * A.shape[1] + [(0, None)])
+    if not res.success or res.x is None or res.x[-1] <= 0:
+        # no strictly-interior point => planes don't bound a closed region
+        # (a facet is missing). Clean signal for the Task 7 fallback.
+        raise ValueError("facet half-spaces do not bound an interior region")
     return res.x[:-1]
 
 
@@ -790,10 +812,16 @@ def reconstruct_dataset(dataset_path, params=None):
         from gemscanner.reconstruction.facet_fit import FacetReconstructor
         try:
             return FacetReconstructor().reconstruct(dataset, params)
-        except Exception:
+        except Exception as exc:
             if not params.facet_fallback:
                 raise
-            # fall through to the smooth default below
+            # facet is the highest-quality tier; degrade to the smooth
+            # metrology method (soft_hull), and never fail silently so a real
+            # regression (or a non-faceted stone) is visible, not masked.
+            warnings.warn(f"facet reconstruction failed ({exc}); falling back "
+                          "to soft_hull", RuntimeWarning)
+            from gemscanner.reconstruction.soft_hull import SoftHullReconstructor
+            return SoftHullReconstructor().reconstruct(dataset, params)
     if params.method == "soft_hull":
         from gemscanner.reconstruction.soft_hull import SoftHullReconstructor
         return SoftHullReconstructor().reconstruct(dataset, params)
