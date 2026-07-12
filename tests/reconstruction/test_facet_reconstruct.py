@@ -1,6 +1,6 @@
 import numpy as np
 import trimesh
-from gemscanner.synthetic.toy_gem import make_toy_gem, unique_face_planes
+from gemscanner.synthetic.toy_gem import make_toy_gem
 from gemscanner.synthetic.generator import generate_polyhedron_scan
 from gemscanner.storage.dataset import load_dataset
 from gemscanner.reconstruction.base import ReconstructionParams

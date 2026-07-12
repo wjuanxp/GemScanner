@@ -167,14 +167,18 @@ def recover_planes(sm, seeds, params):
     return _merge_planes(planes, params.facet_merge_deg)
 
 
-def _merge_planes(planes, merge_deg):
+def _merge_planes(planes, merge_deg, d_reltol=0.02):
+    # d-tolerance is RELATIVE to gem scale (max |offset|) so merging works on
+    # any-sized stone -- a fixed mm threshold would over/under-merge on gem04.
     cos_tol = np.cos(np.radians(merge_deg))
+    scale = max((abs(p["plane"][3]) for p in planes), default=1.0) or 1.0
+    d_tol = d_reltol * scale
     out = []
     for p in planes:
         a, b, c, d = p["plane"]; n = np.array([a, b, c])
         for q in out:
             qa, qb, qc, qd = q["plane"]
-            if float(np.dot(n, [qa, qb, qc])) >= cos_tol and abs(d - qd) < 0.1:
+            if float(np.dot(n, [qa, qb, qc])) >= cos_tol and abs(d - qd) < d_tol:
                 if p["rms"] < q["rms"]:
                     q.update(p)
                 break
@@ -190,6 +194,10 @@ def _interior_point(halfspaces):
     A_ub = np.hstack([A, norm])
     c = np.zeros(A.shape[1] + 1); c[-1] = -1.0     # maximise radius
     res = linprog(c, A_ub=A_ub, b_ub=b, bounds=[(None, None)] * A.shape[1] + [(0, None)])
+    if not res.success or res.x is None or res.x[-1] <= 0:
+        # no strictly-interior point => planes don't bound a closed region
+        # (a facet is missing). Clean signal for the Task 7 fallback.
+        raise ValueError("facet half-spaces do not bound an interior region")
     return res.x[:-1]
 
 
