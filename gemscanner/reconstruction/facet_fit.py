@@ -228,5 +228,6 @@ class FacetReconstructor:
         mesh, verts, edges = planes_to_polytope(planes)
         mesh.metadata["facets"] = {
             "planes": [p["plane"] for p in planes],
+            "rms": [p["rms"] for p in planes],
             "vertices": verts, "edges": edges}
         return mesh

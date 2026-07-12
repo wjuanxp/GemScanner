@@ -20,7 +20,6 @@ class ReconstructionParams:
     facet_merge_deg: float = 6.0
     facet_view_search: int = 4
     facet_axial_cos: float = 0.95      # |normal_z| above this = table/culet, not tangent
-    facet_planarity_tol_mm: float = 0.05
     facet_fallback: bool = True
 
 

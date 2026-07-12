@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 import numpy as np
 from gemscanner.coords import row_to_z, axis_column_at_row, column_to_projection
@@ -16,6 +15,10 @@ class SupportMaps:
 
 
 def support_maps(dataset, params=None):
+    """Build per-row/per-view support maps h_right/h_left from silhouettes.
+    Assumes a full 360-degree turntable scan: downstream facet recovery only
+    consumes h_right, so a half-turn scan would silently omit facets facing
+    the unscanned hemisphere."""
     params = params if params is not None else ReconstructionParams()
     m = dataset.manifest
     H, mmpp = m.image_height, m.mm_per_px
