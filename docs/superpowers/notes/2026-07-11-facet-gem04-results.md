@@ -68,6 +68,13 @@ computed in `recover_planes()` against the raw support-map samples *before*
 half-space assembly — obtained by adding debug prints and calling
 `seed_facets`/`recover_planes` directly:
 
+> **Reproducibility caveat:** `recover_planes()` computes this `rms` per facet
+> but it is *not* threaded into `mesh.metadata["facets"]` (which carries only
+> the plane tuples), so `scripts/validate_facet_gem04.py` alone cannot
+> regenerate these figures — they require the ad-hoc instrumentation described
+> above. Threading `rms` into the metadata is a small follow-up (touches
+> production code, hence out of scope for this validation-only task).
+
 - 41 tangent-facet fits (2 more planes are the extremal table/culet, fit
   exactly by definition, rms=0): **median 32.8 µm, mean 49.6 µm, min 4.7 µm,
   max 165.8 µm**.
