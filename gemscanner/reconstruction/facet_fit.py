@@ -214,6 +214,60 @@ def planes_to_polytope(planes):
     return hull, np.asarray(hull.vertices, float), np.asarray(edges, int)
 
 
+def _median_along(a, window):
+    """Rank-based denoise along a 1D array (facet-preserving, like the
+    shipped de-terracing filters). window<2 is identity."""
+    if not window or window < 2:
+        return a
+    out = a.copy()
+    half = window // 2
+    for i in range(len(a)):
+        seg = a[max(0, i - half):i + half + 1]
+        seg = seg[np.isfinite(seg)]
+        if seg.size:
+            out[i] = np.median(seg)
+    return out
+
+
+def segment_support(z, h, median_rows=9, slope_break=0.35,
+                    min_seg_mm=0.25, min_rows=8):
+    """Split one view's raw support column H(z) into affine segments.
+
+    Each segment is a candidate facet trace (a facet's support is affine in z
+    while it is the active tangent). Median-denoise along z first (rank-based,
+    keeps real slope breaks sharp), then break where the local slope changes
+    faster than `slope_break` (1/mm). Returns [{z_lo, z_hi, alpha, beta, rms,
+    n}] sorted by z_lo; [] if fewer than 5 finite samples."""
+    z = np.asarray(z, float); h = np.asarray(h, float)
+    ok = np.isfinite(h) & np.isfinite(z)
+    z, h = z[ok], h[ok]
+    if z.size < 5:
+        return []
+    order = np.argsort(z)
+    z, h = z[order], h[order]
+    h = _median_along(h, median_rows)
+    slope = np.gradient(h, z)
+    dslope = np.abs(np.gradient(slope, z))
+
+    segs = []
+    start = 0
+    def _emit(i0, i1):
+        zz, hh = z[i0:i1], h[i0:i1]
+        if len(zz) < max(4, min_rows) or (zz[-1] - zz[0]) < min_seg_mm:
+            return
+        A = np.polyfit(zz, hh, 1)
+        rms = float(np.sqrt(np.mean((hh - np.polyval(A, zz)) ** 2)))
+        segs.append({"z_lo": float(zz[0]), "z_hi": float(zz[-1]),
+                     "alpha": float(A[0]), "beta": float(A[1]),
+                     "rms": rms, "n": int(len(zz))})
+    for i in range(1, len(z)):
+        if dslope[i] > slope_break and (z[i] - z[start]) > min_seg_mm:
+            _emit(start, i)
+            start = i
+    _emit(start, len(z))
+    return segs
+
+
 class FacetReconstructor:
     def reconstruct(self, dataset, params=None):
         params = params if params is not None else ReconstructionParams()

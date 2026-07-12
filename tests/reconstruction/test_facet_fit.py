@@ -1,5 +1,5 @@
 import numpy as np
-from gemscanner.reconstruction.facet_fit import plane_from_affine, fit_affine_support, seed_facets
+from gemscanner.reconstruction.facet_fit import plane_from_affine, fit_affine_support, seed_facets, segment_support
 from gemscanner.synthetic.toy_gem import make_toy_gem
 import trimesh
 
@@ -41,3 +41,29 @@ def test_seed_facets_recovers_distinct_orientations():
         if horiz_len > 1e-6:  # only check when horizontal component is significant
             assert abs(np.cos(s["azimuth"]) - a / horiz_len) < 1e-6
             assert abs(np.sin(s["azimuth"]) + b / horiz_len) < 1e-6
+
+def test_segment_support_splits_piecewise_affine():
+    # three affine pieces: slopes +1.5, -0.5, -1.2 over z bands of 2mm each
+    z = np.linspace(-3, 3, 240)
+    h = np.where(z < -1, 4.0 + 1.5 * (z + 1),
+        np.where(z < 1, 4.0 - 0.5 * (z + 1), 3.0 - 1.2 * (z - 1)))
+    rng = np.random.default_rng(0)
+    h = h + rng.normal(0, 0.003, h.size)          # 3um noise
+    h[40] += 0.08; h[150] -= 0.06                 # terracing-style outliers
+    segs = segment_support(z, h)
+    assert len(segs) == 3
+    slopes = sorted(s["alpha"] for s in segs)
+    assert abs(slopes[0] - (-1.2)) < 0.06
+    assert abs(slopes[1] - (-0.5)) < 0.06
+    assert abs(slopes[2] - 1.5) < 0.06
+    for s in segs:
+        assert s["rms"] < 0.01                    # fits are ~noise-level
+        assert s["z_hi"] > s["z_lo"]
+
+def test_segment_support_handles_nans_and_tiny_input():
+    z = np.linspace(-1, 1, 50)
+    h = 2.0 + 0.3 * z
+    h[10:20] = np.nan
+    segs = segment_support(z, h)
+    assert len(segs) >= 1 and abs(segs[0]["alpha"] - 0.3) < 0.05
+    assert segment_support(z[:3], h[:3]) == []
