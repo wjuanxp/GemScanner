@@ -368,7 +368,11 @@ def find_table_planes(sm, table_width_frac=0.3):
     flat table (silhouette width there > table_width_frac x girdle width).
     A pointed culet gets no cap -- its facets converge to the apex. Scans on
     this rig are culet-up (table at z_min), but detection is symmetric."""
-    width = np.nanmean(sm.h_right + sm.h_left, axis=1)   # per-row diameter
+    diam = sm.h_right + sm.h_left                        # per-row, per-view
+    counts = np.isfinite(diam).sum(axis=1)
+    width = np.where(counts > 0,                         # nanmean w/o the
+                     np.nansum(np.nan_to_num(diam), axis=1)
+                     / np.maximum(counts, 1), np.nan)    # empty-slice warning
     ok = np.isfinite(width) & sm.valid.any(axis=1)
     if not ok.any():
         return []
