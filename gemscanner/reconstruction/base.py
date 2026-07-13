@@ -15,6 +15,19 @@ class ReconstructionParams:
     # "strip" = fast per-slice visual hull (default); "soft_hull" = anti-aliased
     # volumetric visual hull + marching cubes (metrology-grade, needs scikit-image)
     method: str = "strip"
+    # facet method (method="facet"): unsupervised facet-plane recovery from
+    # the raw support function (v2.3: facet azimuths from cross-slice polygon
+    # edges w/ extended z-bands + per-azimuth TWO-SCALE affine tier
+    # segmentation + girdle-band recovery; no soft-hull seed)
+    facet_min_inliers: int = 8         # min rows per coarse tier (fine-pass
+                                       # tiers use an internal 5-row floor)
+    facet_merge_deg: float = 6.0
+    facet_fallback: bool = True
+    facet_seg_median_rows: int = 17    # Theil-Sen slope window (rows)
+    facet_slope_jump: float = 0.12     # min two-sided slope jump between tiers
+    facet_min_seg_mm: float = 0.25     # min tier z-span
+    facet_min_edge_mm: float = 0.35    # min slice-polygon edge (carve-quantum filter)
+    facet_table_width_frac: float = 0.3  # table plateau width vs girdle width
 
 
 @dataclass
