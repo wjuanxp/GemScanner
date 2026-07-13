@@ -64,7 +64,7 @@ front-end was discarding it.
 1. **Support maps** — existing `support_maps(dataset, params)`. Unchanged.
 2. **Per-view affine segmentation** (new, productionized spike):
    for each view `i`, estimate the local slope `dH/dz` by sliding-window
-   Theil–Sen (window `facet_seg_median_rows`, default 9 — rank-robust, no
+   Theil–Sen (window `facet_seg_median_rows`, default 17 — rank-robust, no
    pre-filtering: a blanket median staircases sloped columns), split into
    segments at run-maxima of the two-sided slope jump above `facet_slope_jump`
    (default 0.12), trim the k-row transition zone, and fit each segment with

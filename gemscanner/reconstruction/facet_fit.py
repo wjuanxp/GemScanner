@@ -62,7 +62,10 @@ def fit_affine_support(z, h, mask, min_inliers=8, resid_tol_mm=0.05):
 
 
 def seed_facets(mesh, merge_deg=8.0, min_area_frac=0.005):
-    """Cluster mesh face normals (area-weighted) into distinct facet seeds."""
+    """Cluster mesh face normals (area-weighted) into distinct facet seeds.
+
+    NOT called by the facet path (v1 soft-hull seeding, superseded by
+    facet_azimuths in v2.1). Retained: tested, harmless -- see v2 spec."""
     normals = np.asarray(mesh.face_normals, float)
     areas = np.asarray(mesh.area_faces, float)
     order = np.argsort(areas)[::-1]
@@ -253,6 +256,10 @@ def recover_planes(sm, slices, params):
                                     min_rows=_FINE_MIN_ROWS)
         for seg in segs:
             mask = sm.valid[:, i] & (sm.z >= seg["z_lo"]) & (sm.z <= seg["z_hi"])
+            # Refit floor is relaxed to _FINE_MIN_ROWS so fine-pass (narrow
+            # tier) segments survive their own refit. This is a no-op for
+            # coarse segments: segment_support already enforced
+            # min_rows=params.facet_min_inliers when it emitted them.
             alpha, beta, rms, n = fit_affine_support(
                 sm.z, sm.h_right[:, i], mask,
                 min_inliers=min(params.facet_min_inliers, _FINE_MIN_ROWS))
@@ -400,6 +407,9 @@ def _z_overlap_frac(s, t):
 def cluster_segments(segs_by_view, min_views=3, slope_tol=0.15,
                      overlap_frac=0.5):
     """Chain matching affine segments across neighbouring views (wraparound).
+
+    NOT called by the facet path (chains conflate facet and arris traces --
+    superseded by facet_azimuths in v2.1). Retained: tested, harmless.
 
     A real facet is tangent-visible over a contiguous azimuth arc, so its
     trace persists across neighbouring views with similar slope and z-band.

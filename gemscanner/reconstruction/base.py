@@ -16,9 +16,11 @@ class ReconstructionParams:
     # volumetric visual hull + marching cubes (metrology-grade, needs scikit-image)
     method: str = "strip"
     # facet method (method="facet"): unsupervised facet-plane recovery from
-    # the raw support function (v2.1: facet azimuths from cross-slice polygon
-    # edges + per-azimuth affine tier segmentation; no soft-hull seed)
-    facet_min_inliers: int = 8         # min rows per tier / refit inliers
+    # the raw support function (v2.3: facet azimuths from cross-slice polygon
+    # edges w/ extended z-bands + per-azimuth TWO-SCALE affine tier
+    # segmentation + girdle-band recovery; no soft-hull seed)
+    facet_min_inliers: int = 8         # min rows per coarse tier (fine-pass
+                                       # tiers use an internal 5-row floor)
     facet_merge_deg: float = 6.0
     facet_fallback: bool = True
     facet_seg_median_rows: int = 17    # Theil-Sen slope window (rows)

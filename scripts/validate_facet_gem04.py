@@ -1,6 +1,8 @@
 # scripts/validate_facet_gem04.py
-"""Reconstruct scans/gem04 with method=facet (v2.1) and report facet-quality
-metrics + quantitative gate verdicts against the pre-verified az-74 reference
+"""Reconstruct scans/gem04 with method=facet (v2.3) and report facet-quality
+metrics + quantitative gate verdicts against the pre-verified az-74 reference.
+Note: the Z-extent gate (~50um) is a known out-of-scope gap (+77um = sharp culet
+apex vs the smoothed reference's rounded tip); user accepted at visual sign-off
 (pavilion tiers ~= +27/+39/+45/+50 deg, crown ~= -58 deg, per-tier rms
 4.7-8.0 um)."""
 import math
