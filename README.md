@@ -27,6 +27,9 @@ the [selectable methods](#reconstruction-methods) remove while keeping real face
   picker.
 - **Selectable reconstruction methods** — trade speed for surface quality, from a fast
   raw visual hull to an anti-aliased volumetric hull (see below).
+- **Faceted reconstruction** — for step-cut / faceted stones, an unsupervised
+  facet-plane recovery (`method="facet"`) that fits the silhouette support function
+  into a watertight polyhedron of planar facets, girdle ring included.
 - **Swappable camera backends** — `gentl` (Harvesters/GenICam), `baumer` (neoAPI),
   `opencv` (USB), or `mock` — a one-line config change.
 - **ESP32-C6 motion firmware** — a USB-CDC line protocol driving a 5-phase stepper
@@ -36,7 +39,7 @@ the [selectable methods](#reconstruction-methods) remove while keeping real face
 
 | Path | What |
 |------|------|
-| `gemscanner/reconstruction/` | Visual hull, soft hull, mesh lofting, de-terracing |
+| `gemscanner/reconstruction/` | Visual hull, soft hull, faceted-plane fit, mesh lofting, de-terracing |
 | `gemscanner/vision/` | Silhouette extraction |
 | `gemscanner/gui/` | PySide6 app (wizard, preview, panels, worker thread) |
 | `gemscanner/camera/` | Camera backends + factory (`gentl`/`baumer`/`opencv`/`mock`) |
@@ -56,8 +59,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
 ```
 
-Runtime dependencies: `numpy`, `opencv-python`, `trimesh`, `open3d`, `scikit-image`,
-`pyserial`, `pyyaml`, `harvesters`, `PySide6`. The GenTL camera backend also needs a
+Runtime dependencies: `numpy`, `scipy`, `opencv-python`, `trimesh`, `open3d`,
+`scikit-image`, `pyserial`, `pyyaml`, `harvesters`, `PySide6`. The GenTL camera backend also needs a
 vendor `.cti` producer installed on the machine (e.g. Baumer's `bgapi2_gige.cti`).
 
 ## GUI
@@ -87,15 +90,29 @@ them while preserving genuine facet edges (all measured on a real 17 µm/px scan
 | Smooth edges *(recommended)* | `edge_median_rows=9` | Median-smooths the silhouette edge per view (image space) | ≈ −80% | fast |
 | Smooth surface | `axial_median_rows=9` | Median-smooths the ring radius field along z (mesh space) | ≈ −85% | fast |
 | High accuracy | `method="soft_hull"` | Anti-aliased volumetric visual hull + marching cubes | ≈ −70%, sharper facets | minutes |
+| Faceted gem (planar) | `method="facet"` | Fits the support function into planar facets → watertight polyhedron | n/a² | seconds |
 
 ¹ Reduction of the horizontal-band artifact on a real 17 µm/px scan; larger median
 windows remove more (edge window 15 reaches ≈ −96%).
+
+² The faceted method doesn't carve per-slice rings, so terracing doesn't arise — it
+recovers the facet planes directly.
 
 Edge/axial median use rank-rejection of per-row outliers, so facets stay crisp;
 measured impact on volume is ≤ +0.24% and on bounding dimensions effectively zero.
 The soft hull is the most accurate (synthetic-ellipsoid volume error −0.8% vs −2.7%
 for the raw hull) and produces a watertight single-body mesh; it requires
 `scikit-image`.
+
+The **faceted** method is for genuinely faceted stones (step cuts, brilliants). Instead
+of carving cross-sections it detects each facet's azimuth from the slice-polygon edges,
+segments the per-view support function `H(z)` into planar tiers, recovers the girdle
+band, and assembles the resulting half-spaces into a single watertight polyhedron of
+flat facets — in seconds, with no soft-hull seed. On the gem04 reference scan it
+recovers 56 facets (including the faceted girdle ring) at 5 µm median per-facet fit,
+with bounding-box extents within 16/40/77 µm (X/Y/Z) of the visual-hull mesh. It is
+best on clean step/brilliant cuts; rounded cabochons should use one of the hull methods.
+Requires `scipy`.
 
 ## CLI
 
