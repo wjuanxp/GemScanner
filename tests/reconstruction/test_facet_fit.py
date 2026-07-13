@@ -102,3 +102,31 @@ def test_cluster_segments_separates_stacked_facets_same_azimuth():
     assert len(chains) == 2
     zl = sorted(c["seg"]["z_lo"] for c in chains)
     assert zl[0] == -2.0 and zl[1] == -0.6
+
+from types import SimpleNamespace
+from gemscanner.reconstruction.facet_fit import find_table_planes
+
+def _fake_sm(z, width):
+    """width(z) profile -> minimal SupportMaps stand-in (1 'view')."""
+    w = np.asarray(width, float)
+    hr = (w / 2)[:, None]
+    valid = np.isfinite(w)[:, None] & (w[:, None] > 0)
+    hr = np.where(valid, hr, np.nan)
+    return SimpleNamespace(z=np.asarray(z, float), h_right=hr, h_left=hr.copy(),
+                           valid=valid, theta=np.array([0.0]))
+
+def test_table_detected_at_wide_flat_bottom_only():
+    # culet-up: pointed top (width->0), wide flat bottom (table)
+    z = np.linspace(-3, 3, 120)                  # ascending z
+    width = np.clip(4.0 - 1.2 * (z + 3) * 0, 0, None)
+    width = np.where(z > 2.0, (3.0 - z) * 2.0, 4.0)   # top tapers to 0 at z=3
+    planes = find_table_planes(_fake_sm(z, width))
+    assert len(planes) == 1
+    a, b, c, d = planes[0]["plane"]
+    assert c == -1.0                             # bottom cap: -z <= d form
+    assert abs(-d - z[0]) < 0.1                  # at z_min
+
+def test_no_table_planes_when_both_ends_pointed():
+    z = np.linspace(-2, 2, 80)
+    width = 4.0 * (1 - np.abs(z) / 2)            # bicone: both ends -> 0
+    assert find_table_planes(_fake_sm(z, width)) == []

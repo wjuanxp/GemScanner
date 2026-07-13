@@ -357,6 +357,37 @@ def cluster_segments(segs_by_view, min_views=3, slope_tol=0.15,
     return chains
 
 
+def find_table_planes(sm, table_width_frac=0.3):
+    """Orientation-aware extremal planes: cap a z-extreme ONLY if it is a wide
+    flat table (silhouette width there > table_width_frac x girdle width).
+    A pointed culet gets no cap -- its facets converge to the apex. Scans on
+    this rig are culet-up (table at z_min), but detection is symmetric."""
+    diam = sm.h_right + sm.h_left                        # per-row, per-view
+    counts = np.isfinite(diam).sum(axis=1)
+    width = np.where(counts > 0,                         # nanmean w/o the
+                     np.nansum(np.nan_to_num(diam), axis=1)
+                     / np.maximum(counts, 1), np.nan)    # empty-slice warning
+    ok = np.isfinite(width) & sm.valid.any(axis=1)
+    if not ok.any():
+        return []
+    zv, wv = sm.z[ok], width[ok]
+    girdle_w = float(np.nanmax(wv))
+    if girdle_w <= 0:
+        return []
+    n_val = int(sm.valid.any(axis=1).sum())
+    planes = []
+    order = np.argsort(zv)
+    zv, wv = zv[order], wv[order]
+    band = max(3, int(0.2 / max(abs(zv[1] - zv[0]), 1e-6)))  # ~0.2mm of rows
+    if np.nanmean(wv[-band:]) > table_width_frac * girdle_w:  # top is flat
+        planes.append({"plane": (0.0, 0.0, 1.0, float(zv[-1])),
+                       "rms": 0.0, "n_inliers": n_val, "source": "extremal"})
+    if np.nanmean(wv[:band]) > table_width_frac * girdle_w:   # bottom is flat
+        planes.append({"plane": (0.0, 0.0, -1.0, float(-zv[0])),
+                       "rms": 0.0, "n_inliers": n_val, "source": "extremal"})
+    return planes
+
+
 class FacetReconstructor:
     def reconstruct(self, dataset, params=None):
         params = params if params is not None else ReconstructionParams()
