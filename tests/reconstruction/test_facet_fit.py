@@ -145,3 +145,26 @@ def test_facet_azimuths_finds_square_sides():
     assert np.allclose(azs, [0.0, 90.0, 180.0, 270.0], atol=1.0)
     for _, z_lo, z_hi in fams:
         assert z_lo == -1.0 and z_hi == 1.0
+
+
+from gemscanner.reconstruction.facet_fit import girdle_band
+
+def test_girdle_band_brackets_width_plateau():
+    # width profile with a flat plateau (girdle) between two tapered ends
+    z = np.linspace(-3.0, 3.0, 121)
+    width = np.where(np.abs(z) <= 1.0, 4.0, 4.0 - 0.6 * (np.abs(z) - 1.0))
+    band = girdle_band(_fake_sm(z, width))
+    assert band is not None
+    z_lo, z_hi = band
+    # the plateau spans [-1, 1]; the returned band must sit inside/around it
+    assert z_lo <= 0.0 <= z_hi
+    assert -1.05 <= z_lo <= -0.8
+    assert 0.8 <= z_hi <= 1.05
+
+def test_girdle_band_none_or_tiny_without_plateau():
+    # a cone: width strictly decreasing -> the max-width band is a single row
+    z = np.linspace(-2.0, 2.0, 80)
+    width = 4.0 - (z - z[0])  # monotonic, no flat plateau wider than 1 sample
+    band = girdle_band(_fake_sm(z, width))
+    # fewer than 5 rows tie the max -> None (min_rows gate not met)
+    assert band is None

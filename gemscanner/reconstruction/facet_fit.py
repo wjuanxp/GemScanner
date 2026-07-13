@@ -91,19 +91,26 @@ def seed_facets(mesh, merge_deg=8.0, min_area_frac=0.005):
     return seeds
 
 
-def facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0,
-                   min_slices=3):
+def facet_azimuths(slices, min_edge_mm=0.35, ext_edge_mm=0.15, bin_deg=2.0,
+                   min_total_len=1.0, min_slices=3):
     """Cluster cross-section polygon edges across z by outward-normal azimuth.
 
     The strip slices' polygon edges ARE the facet traces: each real facet
     appears as a >= min_edge_mm edge at its azimuth in every slice of its
     z-band. Edges shorter than min_edge_mm are carve-quantization noise at
-    polygon corners (length ~ R * view-step) and are skipped. Returns
+    polygon corners (length ~ R * view-step) and are skipped for the purposes
+    of SEEDING a family (deciding which azimuths are real facets).
+
+    Once a family is seeded, its returned z-band is EXTENDED using the
+    shorter edges (>= ext_edge_mm) that fall in the family's azimuth bins --
+    this recovers coverage near the culet, where a real facet's edges shrink
+    below min_edge_mm well before the facet itself ends. Returns
     [(azimuth_rad, z_lo, z_hi)] families (length-weighted circular mean)."""
     nbins = int(round(360.0 / bin_deg))
     acc_len = np.zeros(nbins)
     acc_x = np.zeros(nbins); acc_y = np.zeros(nbins)
     zs = [[] for _ in range(nbins)]
+    zs_ext = [[] for _ in range(nbins)]
     for s in slices:
         poly = s.polygon
         if poly is None or len(poly) < 3:
@@ -114,13 +121,16 @@ def facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0,
             a, b = poly[i], poly[(i + 1) % n]
             e = b - a
             L = float(np.hypot(*e))
-            if L < min_edge_mm:
+            if L < ext_edge_mm:
                 continue
             nrm = np.array([e[1], -e[0]]) / L
             if nrm @ (0.5 * (a + b) - c) < 0:
                 nrm = -nrm
             az = math.atan2(-nrm[1], nrm[0])      # n_i=(cos,-sin) convention
             k = int(round((math.degrees(az) % 360) / bin_deg)) % nbins
+            zs_ext[k].append(s.z_mm)
+            if L < min_edge_mm:
+                continue
             acc_len[k] += L
             acc_x[k] += L * math.cos(az)
             acc_y[k] += L * math.sin(az)
@@ -140,38 +150,118 @@ def facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0,
         allz = sorted(z for m in members for z in zs[m])
         if tot < min_total_len or len(allz) < min_slices:
             continue
+        extz = sorted(z for m in members for z in zs_ext[m])
         ax = sum(acc_x[m] for m in members); ay = sum(acc_y[m] for m in members)
-        fams.append((math.atan2(ay, ax), float(allz[0]), float(allz[-1])))
+        fams.append((math.atan2(ay, ax), float(extz[0]), float(extz[-1])))
     return fams
 
 
+_FINE_ROWS = 7          # two-scale pass 2: fine Theil-Sen window (rows)
+_FINE_MIN_ROWS = 5      # two-scale pass 2: min inliers for a fine-window fit
+_FINE_MIN_MM = 0.12     # two-scale pass 2: min unclaimed z-gap worth re-segmenting
+
+
+def girdle_band(sm, eps_mm=0.04):
+    """z-band of the width-profile plateau: a faceted girdle is a ring of
+    near-vertical facets, so unlike a rounded girdle, the true widest band of
+    the stone has ~constant width across several rows (vs a single peak row).
+    Returns (z_lo, z_hi) bracketing rows within eps_mm of the max width, or
+    None if fewer than 5 such rows exist (same warning-free width computation
+    as find_table_planes -- np.nansum/np.nan_to_num avoids all-NaN-slice
+    warnings)."""
+    diam = sm.h_right + sm.h_left
+    counts = np.isfinite(diam).sum(axis=1)
+    width = np.where(counts > 0,
+                     np.nansum(np.nan_to_num(diam), axis=1)
+                     / np.maximum(counts, 1), np.nan)
+    ok = np.isfinite(width)
+    if not ok.any():
+        return None
+    zv, wv = sm.z[ok], width[ok]
+    wmax = float(np.nanmax(wv))
+    band = wv >= wmax - eps_mm
+    zb = zv[band]
+    if zb.size < 5:
+        return None
+    return float(zb.min()), float(zb.max())
+
+
+def girdle_planes(sm, fams, band, min_rows=5):
+    """Per-azimuth-family affine fit restricted to the girdle band -- recovers
+    the (typically many, near-vertical) girdle facets a user has confirmed are
+    faceted rather than rounded on this stone. `fams` supplies the azimuths
+    (from facet_azimuths); each is refit fresh here over just the girdle
+    rows, independent of whatever z-band that family's tangent tiers used."""
+    if band is None:
+        return []
+    z_lo, z_hi = band
+    out = []
+    for az, _, _ in fams:
+        d = np.angle(np.exp(1j * (sm.theta - az)))
+        i = int(np.argmin(np.abs(d)))
+        mask = sm.valid[:, i] & (sm.z >= z_lo) & (sm.z <= z_hi)
+        alpha, beta, rms, n = fit_affine_support(sm.z, sm.h_right[:, i], mask,
+                                                 min_inliers=min_rows)
+        if np.isnan(alpha):
+            continue
+        out.append({"plane": plane_from_affine(sm.theta[i], alpha, beta),
+                    "rms": rms, "n_inliers": n, "source": "girdle"})
+    return out
+
+
 def recover_planes(sm, slices, params):
-    """v2.1: facet azimuths from cross-slice polygon edges, then per-azimuth
-    affine tier segmentation of the raw support column, refit exactly. No
-    soft-hull seed (it rounded real facets away -- verified on gem04); no
-    cross-view chaining (chains conflate facet and arris traces -- verified
-    on the toy gate)."""
+    """v2.3: facet azimuths from cross-slice polygon edges (extended near the
+    culet via facet_azimuths' ext_edge_mm), then per-azimuth affine tier
+    segmentation of the raw support column at two scales -- a coarse pass
+    (params.facet_seg_median_rows) followed by a fine pass (_FINE_ROWS) over
+    any unclaimed z-gaps wider than _FINE_MIN_MM, which recovers thin tiers
+    the coarse window smooths over -- plus a dedicated girdle-band pass
+    (girdle_band/girdle_planes) that refits each azimuth over the width-
+    profile plateau to recover near-vertical girdle facets. No soft-hull seed
+    (it rounded real facets away -- verified on gem04); no cross-view
+    chaining (chains conflate facet and arris traces -- verified on the toy
+    gate). All candidate planes (tangent tiers + girdle + table/culet caps)
+    are deduplicated in a single final _merge_planes call."""
     fams = facet_azimuths(slices, min_edge_mm=params.facet_min_edge_mm)
     planes = []
     for az, z_lo, z_hi in fams:
         d = np.angle(np.exp(1j * (sm.theta - az)))   # wrapped difference
         i = int(np.argmin(np.abs(d)))
-        rows = sm.valid[:, i] & (sm.z >= z_lo - 0.1) & (sm.z <= z_hi + 0.1)
-        segs = segment_support(sm.z[rows], sm.h_right[rows, i],
+        band = sm.valid[:, i] & (sm.z >= z_lo - 0.1) & (sm.z <= z_hi + 0.1)
+        segs = segment_support(sm.z[band], sm.h_right[band, i],
                                median_rows=params.facet_seg_median_rows,
                                slope_jump=params.facet_slope_jump,
                                min_seg_mm=params.facet_min_seg_mm,
                                min_rows=params.facet_min_inliers)
+        # ---- pass 2: fine-window segmentation of unclaimed z-gaps ----
+        zb = np.sort(sm.z[band])
+        claimed = [(s["z_lo"], s["z_hi"]) for s in segs]
+        gaps = []
+        cur = zb[0] if len(zb) else None
+        for lo, hi in sorted(claimed):
+            if cur is not None and lo - cur > _FINE_MIN_MM:
+                gaps.append((cur, lo))
+            cur = max(cur, hi) if cur is not None else hi
+        if cur is not None and len(zb) and zb[-1] - cur > _FINE_MIN_MM:
+            gaps.append((cur, zb[-1]))
+        for glo, ghi in gaps:
+            gsel = band & (sm.z >= glo) & (sm.z <= ghi)
+            segs += segment_support(sm.z[gsel], sm.h_right[gsel, i],
+                                    median_rows=_FINE_ROWS,
+                                    slope_jump=params.facet_slope_jump,
+                                    min_seg_mm=_FINE_MIN_MM,
+                                    min_rows=_FINE_MIN_ROWS)
         for seg in segs:
             mask = sm.valid[:, i] & (sm.z >= seg["z_lo"]) & (sm.z <= seg["z_hi"])
             alpha, beta, rms, n = fit_affine_support(
                 sm.z, sm.h_right[:, i], mask,
-                min_inliers=params.facet_min_inliers)
+                min_inliers=min(params.facet_min_inliers, _FINE_MIN_ROWS))
             if np.isnan(alpha):
                 continue
             planes.append({"plane": plane_from_affine(sm.theta[i], alpha, beta),
                            "rms": rms, "n_inliers": n, "source": "tangent"})
     planes += find_table_planes(sm, params.facet_table_width_frac)
+    planes += girdle_planes(sm, fams, girdle_band(sm))
     return _merge_planes(planes, params.facet_merge_deg)
 
 

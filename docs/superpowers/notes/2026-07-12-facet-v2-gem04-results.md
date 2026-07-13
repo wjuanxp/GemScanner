@@ -244,3 +244,110 @@ gate.
 - `scans/gem04/gem_facet.stl` — overwritten with the v2.1 default-params
   output (41 planes; the run reported above).
 - This note.
+
+## v2.3 update (2026-07-13)
+
+V2 Task 6 productionized the v2.2/v2.3 controller-verified prototypes
+(`scratchpad/proto_v22.py`, `scratchpad/proto_v23.py`) into
+`gemscanner/reconstruction/facet_fit.py`, with no behavior change intended:
+
+- `facet_azimuths` gained `ext_edge_mm=0.15`: families are still SEEDED by
+  edges >= `min_edge_mm` (unchanged azimuth selection), but each family's
+  returned z-band is now taken from the wider set of edges >= `ext_edge_mm`,
+  extending coverage toward the culet where a real facet's polygon edges
+  shrink below `min_edge_mm` before the facet itself ends.
+- `recover_planes` gained a two-scale tier pass: after the existing coarse
+  `segment_support` pass (`facet_seg_median_rows`), any unclaimed z-gap wider
+  than 0.12 mm is re-segmented with a finer window (7 rows, 5-row min
+  inliers) — these are internal constants (`_FINE_ROWS`, `_FINE_MIN_ROWS`,
+  `_FINE_MIN_MM`), not new `ReconstructionParams` fields, matching the
+  brief's constraint.
+- New `girdle_band(sm, eps_mm=0.04)` / `girdle_planes(sm, fams, band,
+  min_rows=5)`: the girdle on this stone is user-confirmed **faceted, not
+  rounded** — a ring of near-vertical facets, so the width-profile plateau
+  (rows within `eps_mm` of the max mean diameter) brackets the girdle band,
+  and each azimuth family is refit fresh over just that band to recover the
+  girdle facets a coarse single-pass tier segmentation missed.
+- `recover_planes` now composes: coarse+fine tangent tiers + table/culet caps
+  + girdle-band planes, deduplicated with **one** final `_merge_planes` call
+  (the prototype merged twice — once inside the v2.2 tier pass, again after
+  adding girdle planes in v2.3; production merges once at the end only,
+  verified to reproduce the same metrics).
+- `FacetReconstructor.reconstruct` is unchanged; `segment_support`,
+  `cluster_segments`, `seed_facets`, `fit_affine_support`,
+  `plane_from_affine`, `find_table_planes`, `_merge_planes`,
+  `planes_to_polytope`, `_interior_point` are untouched (frozen per brief).
+
+### Toy gate (production vs. verified prototype)
+
+| metric | v2.3 prototype | production | 
+|---|---|---|
+| planes | 25 | 25 |
+| watertight | True | True |
+| volume error | +0.17% | +0.17% |
+| normal error median | ~0.466 deg | 0.466 deg |
+| normal error max | ~0.5 deg | 0.500 deg |
+
+Exact match — single-merge refactor is behavior-preserving on the toy gate.
+
+### gem04 rerun (`scripts/validate_facet_gem04.py`, `holder_mask_rows=705`)
+
+```
+facets=56  tangent=55  extremal=1  vertices(meet-points)=106  edges=312
+watertight=True  volume=139.43 mm^3
+extents (mm): 8.3543 x 7.8762 x 5.5777
+reference gem.stl extents (mm): 8.3381 x 7.8366 x 5.5005
+extent delta vs gem.stl (um): X=+16.3  Y=+39.6  Z=+77.2
+volume delta vs gem.stl: +2.255 mm^3 (+1.64%)
+tangent-facet rms (um): median=5.0  max=16.0  min=3.5  n=55
+
+=== GATE VERDICTS ===
+[PASS] G1 no fallback RuntimeWarning (0 fallback warning(s))
+[PASS] G2 tangent rms median <= 15.0 um (got 5.0 um)
+[FAIL] G3 extents within 50.0 um/axis of gem.stl (worst axis delta 77.2 um)
+[PASS] G4 watertight (got True)
+[PASS] G5 no culet cap (extremal plane with c>0) (culet_cap_present=False)
+[PASS] G6 exactly one table cap (c<0 extremal plane) (got 1)
+```
+
+Roughly 10 of the 55 tangent-source planes sit in the tilt range
+-19.3 deg to +7.7 deg — the recovered girdle ring (near-vertical facets,
+|normal_z| small) that v2.1 could not resolve as a distinct tier. This
+matches the verified prototype's "~10 girdle-source" figure and the user's
+confirmation (from the visual preview) that this stone's girdle is genuinely
+faceted, not rounded.
+
+Comparison across versions (extents delta vs `gem.stl`, µm):
+
+| version | planes | X | Y | Z | rms median (um) |
+|---|---|---|---|---|---|
+| v1 | 43 | +538 | +430 | +150 | 32.8 |
+| v2.1 | 41 | +332 | +160 | +78 | 5.0 |
+| v2.3 (this) | 56 | +16 | +40 | +77 | 5.0 |
+
+X and Y extents fidelity improved dramatically (X: 332 -> 16 um, an ~20x
+reduction; Y: 160 -> 40 um). **G3 (50 um/axis) now passes on X and Y but
+still fails on Z** (77 um, essentially unchanged from v2.1 — consistent with
+the earlier note's finding that the Z delta is set by the two z-extreme
+sample rows plus the single extremal table plane, structurally decoupled
+from the facet-azimuth/tier-segmentation machinery touched by v2.2/v2.3).
+Z fidelity remains a known, out-of-scope gap.
+
+### Sign-off
+
+The user visually inspected a preview of the v2.3 reconstruction (rendered
+by the controller alongside `gem.stl`) and signed off as "good for now; will
+test with more real scans" — i.e. accepted for merge with the understanding
+that further validation against additional real scans is expected before
+this is considered fully proven on hardware beyond gem04.
+
+### Files (v2.3 productionization)
+
+- `gemscanner/reconstruction/facet_fit.py` — `facet_azimuths` extended,
+  `girdle_band`/`girdle_planes` added, `recover_planes` recomposed.
+- `tests/reconstruction/test_facet_fit.py` — added `girdle_band` unit tests.
+- `tests/reconstruction/test_facet_reconstruct.py` — tightened e2e assertions
+  (plane count >= 24, girdle-like plane count >= 6).
+- `scans/gem04/gem_facet.stl` — overwritten with the v2.3 output (56 planes;
+  the run reported above).
+- This note (appended section).

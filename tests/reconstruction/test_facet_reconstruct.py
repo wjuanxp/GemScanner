@@ -31,3 +31,9 @@ def test_facet_reconstruction_matches_ground_truth(tmp_path):
     # meet-points and edges are populated
     assert len(mesh.metadata["facets"]["vertices"]) >= 6
     assert len(mesh.metadata["facets"]["edges"]) >= 9
+    # v2.3: extended azimuth bands + two-scale tiers + girdle-band recovery
+    # should reach the full 25-plane toy-gate count (locks in the improvement)
+    planes = mesh.metadata["facets"]["planes"]
+    assert len(planes) >= 24
+    girdle_like = sum(1 for p in planes if abs(p[2]) < 0.1)
+    assert girdle_like >= 6
