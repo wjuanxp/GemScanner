@@ -1,9 +1,11 @@
+import math
 import numpy as np
 import trimesh
 from scipy.spatial import HalfspaceIntersection
 from scipy.optimize import linprog
 from gemscanner.reconstruction.support import support_maps
 from gemscanner.reconstruction.base import ReconstructionParams
+from gemscanner.geometry.polygon import polygon_centroid
 
 
 def plane_from_affine(theta_star, alpha, beta):
@@ -89,81 +91,87 @@ def seed_facets(mesh, merge_deg=8.0, min_area_frac=0.005):
     return seeds
 
 
-def _nearest_view(theta, az):
-    d = np.angle(np.exp(1j * (theta - az)))   # wrapped difference
-    return int(np.argmin(np.abs(d)))
+def facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0,
+                   min_slices=3):
+    """Cluster cross-section polygon edges across z by outward-normal azimuth.
 
-
-def _search_order(radius):
-    """di offsets ordered by increasing distance from 0: 0,-1,+1,-2,+2,..."""
-    order = [0]
-    for k in range(1, radius + 1):
-        order += [-k, k]
-    return order
-
-
-def annotate_seed_z_extent(mesh, seeds, merge_deg):
-    """Attach each seed's own z-range (from the seed-mesh faces that cluster into
-    it) so recover_planes can restrict the affine fit to that facet's own tier.
-    A tangent facet's support is affine in z only across its OWN z-extent -- a
-    view column mixes girdle/crown/pavilion tiers (each with a different slope)
-    over the object's full height, so fitting the whole column washes out the
-    true per-facet slope. This only reads the mesh already built by seed_facets;
-    it does not alter that function."""
-    cos_tol = np.cos(np.radians(merge_deg))
-    normals = np.asarray(mesh.face_normals, float)
-    verts = np.asarray(mesh.vertices, float)
-    faces = np.asarray(mesh.faces)
-    for s in seeds:
-        match = normals @ s["normal"] >= cos_tol
-        if not match.any():
+    The strip slices' polygon edges ARE the facet traces: each real facet
+    appears as a >= min_edge_mm edge at its azimuth in every slice of its
+    z-band. Edges shorter than min_edge_mm are carve-quantization noise at
+    polygon corners (length ~ R * view-step) and are skipped. Returns
+    [(azimuth_rad, z_lo, z_hi)] families (length-weighted circular mean)."""
+    nbins = int(round(360.0 / bin_deg))
+    acc_len = np.zeros(nbins)
+    acc_x = np.zeros(nbins); acc_y = np.zeros(nbins)
+    zs = [[] for _ in range(nbins)]
+    for s in slices:
+        poly = s.polygon
+        if poly is None or len(poly) < 3:
             continue
-        zs = verts[faces[match]][:, :, 2]
-        s["z_lo"], s["z_hi"] = float(zs.min()), float(zs.max())
-    return seeds
+        c = polygon_centroid(poly)
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            e = b - a
+            L = float(np.hypot(*e))
+            if L < min_edge_mm:
+                continue
+            nrm = np.array([e[1], -e[0]]) / L
+            if nrm @ (0.5 * (a + b) - c) < 0:
+                nrm = -nrm
+            az = math.atan2(-nrm[1], nrm[0])      # n_i=(cos,-sin) convention
+            k = int(round((math.degrees(az) % 360) / bin_deg)) % nbins
+            acc_len[k] += L
+            acc_x[k] += L * math.cos(az)
+            acc_y[k] += L * math.sin(az)
+            zs[k].append(s.z_mm)
+    fams = []
+    used = np.zeros(nbins, bool)
+    for k in np.argsort(acc_len)[::-1]:
+        if used[k] or acc_len[k] <= 0:
+            continue
+        members = [k]; used[k] = True
+        for d in (-1, +1):                        # merge adjacent nonzero bins
+            j = (k + d) % nbins
+            while acc_len[j] > 0 and not used[j]:
+                members.append(j); used[j] = True
+                j = (j + d) % nbins
+        tot = sum(acc_len[m] for m in members)
+        allz = sorted(z for m in members for z in zs[m])
+        if tot < min_total_len or len(allz) < min_slices:
+            continue
+        ax = sum(acc_x[m] for m in members); ay = sum(acc_y[m] for m in members)
+        fams.append((math.atan2(ay, ax), float(allz[0]), float(allz[-1])))
+    return fams
 
 
-def recover_planes(sm, seeds, params):
-    """Refit each seed to an exact plane on the raw support maps; add table/culet."""
+def recover_planes(sm, slices, params):
+    """v2.1: facet azimuths from cross-slice polygon edges, then per-azimuth
+    affine tier segmentation of the raw support column, refit exactly. No
+    soft-hull seed (it rounded real facets away -- verified on gem04); no
+    cross-view chaining (chains conflate facet and arris traces -- verified
+    on the toy gate)."""
+    fams = facet_azimuths(slices, min_edge_mm=params.facet_min_edge_mm)
     planes = []
-    for s in seeds:
-        if abs(s["tilt"]) > params.facet_axial_cos:      # near-axial -> extremal
-            continue
-        i0 = _nearest_view(sm.theta, s["azimuth"])
-        zlo, zhi = s.get("z_lo"), s.get("z_hi")
-        best = None
-        for di in _search_order(params.facet_view_search):
-            i = (i0 + di) % len(sm.theta)
-            mask = sm.valid[:, i]
-            if zlo is not None:
-                mask = mask & (sm.z >= zlo) & (sm.z <= zhi)
+    for az, z_lo, z_hi in fams:
+        d = np.angle(np.exp(1j * (sm.theta - az)))   # wrapped difference
+        i = int(np.argmin(np.abs(d)))
+        rows = sm.valid[:, i] & (sm.z >= z_lo - 0.1) & (sm.z <= z_hi + 0.1)
+        segs = segment_support(sm.z[rows], sm.h_right[rows, i],
+                               median_rows=params.facet_seg_median_rows,
+                               slope_jump=params.facet_slope_jump,
+                               min_seg_mm=params.facet_min_seg_mm,
+                               min_rows=params.facet_min_inliers)
+        for seg in segs:
+            mask = sm.valid[:, i] & (sm.z >= seg["z_lo"]) & (sm.z <= seg["z_hi"])
             alpha, beta, rms, n = fit_affine_support(
                 sm.z, sm.h_right[:, i], mask,
                 min_inliers=params.facet_min_inliers)
             if np.isnan(alpha):
                 continue
-            # take the first (nearest-to-seed-azimuth) valid fit: within a
-            # facet's own tier, views a couple of steps away from i0 can land
-            # in a neighbouring vertex's normal cone and report a deceptively
-            # similar (or even lower) rms, so rms alone cannot be trusted to
-            # pick the right view -- proximity to the seed azimuth is the
-            # reliable signal.
-            best = (rms, sm.theta[i], alpha, beta, n)
-            break
-        if best is None:
-            continue
-        rms, th, alpha, beta, n = best
-        planes.append({"plane": plane_from_affine(th, alpha, beta),
-                       "rms": rms, "n_inliers": n, "source": "tangent"})
-    # table (top) and culet (bottom) as extremal-z horizontal planes
-    zval = sm.z[np.where(sm.valid.any(axis=1))[0]]
-    if zval.size:
-        planes.append({"plane": (0.0, 0.0, 1.0, float(zval.max())),
-                       "rms": 0.0, "n_inliers": int(sm.valid.any(axis=1).sum()),
-                       "source": "extremal"})
-        planes.append({"plane": (0.0, 0.0, -1.0, float(-zval.min())),
-                       "rms": 0.0, "n_inliers": int(sm.valid.any(axis=1).sum()),
-                       "source": "extremal"})
+            planes.append({"plane": plane_from_affine(sm.theta[i], alpha, beta),
+                           "rms": rms, "n_inliers": n, "source": "tangent"})
+    planes += find_table_planes(sm, params.facet_table_width_frac)
     return _merge_planes(planes, params.facet_merge_deg)
 
 
@@ -390,13 +398,13 @@ def find_table_planes(sm, table_width_frac=0.3):
 
 class FacetReconstructor:
     def reconstruct(self, dataset, params=None):
+        from gemscanner.reconstruction.strip_intersection import (
+            StripIntersectionReconstructor)
         params = params if params is not None else ReconstructionParams()
-        from gemscanner.reconstruction.soft_hull import SoftHullReconstructor
-        seed_mesh = SoftHullReconstructor().reconstruct(dataset, params)
-        seeds = seed_facets(seed_mesh, merge_deg=params.facet_merge_deg)
-        seeds = annotate_seed_z_extent(seed_mesh, seeds, params.facet_merge_deg)
         sm = support_maps(dataset, params)
-        planes = recover_planes(sm, seeds, params)
+        slices = StripIntersectionReconstructor().slice_cross_sections(
+            dataset, params)
+        planes = recover_planes(sm, slices, params)
         if len(planes) < 4:
             raise ValueError("facet recovery failed: too few planes")
         mesh, verts, edges = planes_to_polytope(planes)

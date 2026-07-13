@@ -130,3 +130,18 @@ def test_no_table_planes_when_both_ends_pointed():
     z = np.linspace(-2, 2, 80)
     width = 4.0 * (1 - np.abs(z) / 2)            # bicone: both ends -> 0
     assert find_table_planes(_fake_sm(z, width)) == []
+
+from gemscanner.reconstruction.base import SliceResult
+from gemscanner.reconstruction.facet_fit import facet_azimuths
+
+def test_facet_azimuths_finds_square_sides():
+    # a square prism: every slice is the same 4mm half-width square -> 4 families
+    sq = np.array([[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]])
+    slices = [SliceResult(z_mm=z, polygon=sq) for z in np.linspace(-1, 1, 21)]
+    fams = facet_azimuths(slices)
+    assert len(fams) == 4
+    azs = sorted(np.degrees(a) % 360 for a, _, _ in fams)
+    # outward normals at 0/90/180/270 under the atan2(-ny, nx) convention
+    assert np.allclose(azs, [0.0, 90.0, 180.0, 270.0], atol=1.0)
+    for _, z_lo, z_hi in fams:
+        assert z_lo == -1.0 and z_hi == 1.0
