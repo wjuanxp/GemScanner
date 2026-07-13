@@ -408,18 +408,28 @@ git commit -m "feat(reconstruction): orientation-aware table detection; never ca
 
 ---
 
-### Task 4: Rewire `FacetReconstructor` + params (v2 path live)
+### Task 4: Rewire `FacetReconstructor` + params (v2.1 path live)
 
-Replace the seed-based `recover_planes` with segmentation+clustering; drop the soft-hull seed from the facet path; update params. The toy-gem e2e and pipeline tests are the regression gate.
+**AMENDED (user-approved, 2026-07-12):** the spec's chain-based detection was
+pre-verified to FAIL the toy gate (chains conflate facet traces with polygon-
+corner arris traces: 2.5° median error). The adopted v2.1 detection — azimuth
+families from cross-slice strip-polygon edges, then per-azimuth tier
+segmentation — was pre-verified to PASS (0.338° median, +2.97 % vol,
+watertight; and produces 4.7–8 µm-rms tiers on gem04 az-74). This task ships
+exactly the pre-verified code. `cluster_segments` stays in the module (tested)
+but is NOT called by the facet path.
 
 **Files:**
 - Modify: `gemscanner/reconstruction/base.py` (params)
-- Modify: `gemscanner/reconstruction/facet_fit.py` (replace `recover_planes` body + `FacetReconstructor.reconstruct`; DELETE `annotate_seed_z_extent`, `_search_order`, `_nearest_view` if no longer referenced)
-- Test: `tests/reconstruction/test_facet_reconstruct.py` (unchanged — regression), `tests/reconstruction/test_pipeline_facet.py` (unchanged — regression)
+- Modify: `gemscanner/reconstruction/facet_fit.py` (add `facet_azimuths`; replace `recover_planes` + `FacetReconstructor.reconstruct`; DELETE `annotate_seed_z_extent`, `_search_order`, `_nearest_view` if no longer referenced)
+- Test: `tests/reconstruction/test_facet_fit.py` (append one `facet_azimuths` unit test), `tests/reconstruction/test_facet_reconstruct.py` (unchanged — regression), `tests/reconstruction/test_pipeline_facet.py` (unchanged — regression)
 
 **Interfaces:**
-- Consumes: Tasks 1–3 functions; frozen refit/assembly.
-- Produces: `recover_planes(sm, params) -> list[dict]` (note: seeds arg REMOVED); `FacetReconstructor.reconstruct(dataset, params) -> trimesh.Trimesh` with `metadata["facets"]` exactly as today (planes, rms, vertices, edges). No soft-hull call anywhere in the facet path.
+- Consumes: `segment_support` (Task 1), `find_table_planes` (Task 3), frozen refit/assembly, `StripIntersectionReconstructor.slice_cross_sections` (existing), `geometry.polygon.polygon_centroid` (existing), `base.SliceResult`.
+- Produces:
+  - `facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0, min_slices=3) -> list[(azimuth_rad, z_lo, z_hi)]`
+  - `recover_planes(sm, slices, params) -> list[dict]` (signature CHANGED: slices added, seeds removed)
+  - `FacetReconstructor.reconstruct(dataset, params) -> trimesh.Trimesh` with `metadata["facets"]` = {planes, rms, vertices, edges}. No soft-hull call anywhere in the facet path.
 
 - [ ] **Step 1: Update params (base.py)**
 
@@ -427,67 +437,147 @@ Replace the facet param block with:
 
 ```python
     # facet method (method="facet"): unsupervised facet-plane recovery from
-    # the raw support function (v2: per-view affine segmentation + cross-view
-    # clustering; no soft-hull seed)
-    facet_min_inliers: int = 12
+    # the raw support function (v2.1: facet azimuths from cross-slice polygon
+    # edges + per-azimuth affine tier segmentation; no soft-hull seed)
+    facet_min_inliers: int = 8         # min rows per tier / refit inliers
     facet_merge_deg: float = 6.0
     facet_fallback: bool = True
-    facet_seg_median_rows: int = 9     # z-median before segmentation
-    facet_slope_jump: float = 0.12     # min slope jump |dH/dz| between adjacent facets
-    facet_min_seg_mm: float = 0.25     # min segment z-span
-    facet_min_views: int = 3           # min consecutive views per facet chain
-    facet_slope_tol: float = 0.15      # slope match for cross-view chaining
+    facet_seg_median_rows: int = 17    # Theil-Sen slope window (rows)
+    facet_slope_jump: float = 0.12     # min two-sided slope jump between tiers
+    facet_min_seg_mm: float = 0.25     # min tier z-span
+    facet_min_edge_mm: float = 0.35    # min slice-polygon edge (carve-quantum filter)
     facet_table_width_frac: float = 0.3  # table plateau width vs girdle width
 ```
 
-(`facet_view_search` and `facet_axial_cos` are deleted. Grep `gemscanner/ tests/ scripts/` first: the only consumers are the v1 `recover_planes` body being replaced in this task and possibly `scripts/validate_facet_gem04.py` — fix any hit.)
+(`facet_view_search`, `facet_axial_cos`, `facet_min_views`, `facet_slope_tol` are deleted. Grep `gemscanner/ tests/ scripts/` first: the only consumers are the v1 `recover_planes` body being replaced in this task and possibly `scripts/validate_facet_gem04.py` — fix any hit. `cluster_segments` keeps its own signature defaults; its tests are unaffected.)
 
-- [ ] **Step 2: Run regression tests to see them fail against the new params**
-
-Run: `.venv/Scripts/python.exe -m pytest tests/reconstruction/test_facet_reconstruct.py tests/reconstruction/test_pipeline_facet.py -q`
-Expected: FAIL (old `recover_planes` references deleted params) — this is the RED for the rewire.
-
-- [ ] **Step 3: Replace recover_planes and FacetReconstructor**
+- [ ] **Step 2: Write the failing facet_azimuths unit test + run regression RED**
 
 ```python
-# in gemscanner/reconstruction/facet_fit.py — REPLACE the old recover_planes
-# (and delete annotate_seed_z_extent, _search_order, _nearest_view)
-def recover_planes(sm, params):
-    """v2: detect facets on the raw support maps (segment + chain), then refit
-    each exactly. No soft-hull seed -- the smooth seed rounded real facets away
-    (verified on gem04)."""
-    V = len(sm.theta)
-    segs_by_view = [
-        segment_support(sm.z, sm.h_right[:, i],
-                        median_rows=params.facet_seg_median_rows,
-                        slope_jump=params.facet_slope_jump,
-                        min_seg_mm=params.facet_min_seg_mm,
-                        min_rows=params.facet_min_inliers)
-        for i in range(V)
-    ]
-    chains = cluster_segments(segs_by_view,
-                              min_views=params.facet_min_views,
-                              slope_tol=params.facet_slope_tol)
-    planes = []
-    for ch in chains:
-        i, seg = ch["view"], ch["seg"]
-        mask = sm.valid[:, i] & (sm.z >= seg["z_lo"]) & (sm.z <= seg["z_hi"])
-        alpha, beta, rms, n = fit_affine_support(
-            sm.z, sm.h_right[:, i], mask,
-            min_inliers=params.facet_min_inliers)
-        if np.isnan(alpha):
+# append to tests/reconstruction/test_facet_fit.py
+from gemscanner.reconstruction.base import SliceResult
+from gemscanner.reconstruction.facet_fit import facet_azimuths
+
+def test_facet_azimuths_finds_square_sides():
+    # a square prism: every slice is the same 4mm half-width square -> 4 families
+    sq = np.array([[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]])
+    slices = [SliceResult(z_mm=z, polygon=sq) for z in np.linspace(-1, 1, 21)]
+    fams = facet_azimuths(slices)
+    assert len(fams) == 4
+    azs = sorted(np.degrees(a) % 360 for a, _, _ in fams)
+    # outward normals at 0/90/180/270 under the atan2(-ny, nx) convention
+    assert np.allclose(azs, [0.0, 90.0, 180.0, 270.0], atol=1.0)
+    for _, z_lo, z_hi in fams:
+        assert z_lo == -1.0 and z_hi == 1.0
+```
+
+Run: `.venv/Scripts/python.exe -m pytest tests/reconstruction/test_facet_fit.py -q -k facet_azimuths`
+Expected: FAIL with `ImportError: cannot import name 'facet_azimuths'`.
+
+- [ ] **Step 3: Ship the pre-verified v2.1 code**
+
+```python
+# in gemscanner/reconstruction/facet_fit.py
+# add near the top imports:
+import math
+from gemscanner.geometry.polygon import polygon_centroid
+
+# NEW function (append):
+def facet_azimuths(slices, min_edge_mm=0.35, bin_deg=2.0, min_total_len=1.0,
+                   min_slices=3):
+    """Cluster cross-section polygon edges across z by outward-normal azimuth.
+
+    The strip slices' polygon edges ARE the facet traces: each real facet
+    appears as a >= min_edge_mm edge at its azimuth in every slice of its
+    z-band. Edges shorter than min_edge_mm are carve-quantization noise at
+    polygon corners (length ~ R * view-step) and are skipped. Returns
+    [(azimuth_rad, z_lo, z_hi)] families (length-weighted circular mean)."""
+    nbins = int(round(360.0 / bin_deg))
+    acc_len = np.zeros(nbins)
+    acc_x = np.zeros(nbins); acc_y = np.zeros(nbins)
+    zs = [[] for _ in range(nbins)]
+    for s in slices:
+        poly = s.polygon
+        if poly is None or len(poly) < 3:
             continue
-        planes.append({"plane": plane_from_affine(sm.theta[i], alpha, beta),
-                       "rms": rms, "n_inliers": n, "source": "tangent"})
+        c = polygon_centroid(poly)
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            e = b - a
+            L = float(np.hypot(*e))
+            if L < min_edge_mm:
+                continue
+            nrm = np.array([e[1], -e[0]]) / L
+            if nrm @ (0.5 * (a + b) - c) < 0:
+                nrm = -nrm
+            az = math.atan2(-nrm[1], nrm[0])      # n_i=(cos,-sin) convention
+            k = int(round((math.degrees(az) % 360) / bin_deg)) % nbins
+            acc_len[k] += L
+            acc_x[k] += L * math.cos(az)
+            acc_y[k] += L * math.sin(az)
+            zs[k].append(s.z_mm)
+    fams = []
+    used = np.zeros(nbins, bool)
+    for k in np.argsort(acc_len)[::-1]:
+        if used[k] or acc_len[k] <= 0:
+            continue
+        members = [k]; used[k] = True
+        for d in (-1, +1):                        # merge adjacent nonzero bins
+            j = (k + d) % nbins
+            while acc_len[j] > 0 and not used[j]:
+                members.append(j); used[j] = True
+                j = (j + d) % nbins
+        tot = sum(acc_len[m] for m in members)
+        allz = sorted(z for m in members for z in zs[m])
+        if tot < min_total_len or len(allz) < min_slices:
+            continue
+        ax = sum(acc_x[m] for m in members); ay = sum(acc_y[m] for m in members)
+        fams.append((math.atan2(ay, ax), float(allz[0]), float(allz[-1])))
+    return fams
+
+
+# REPLACE the old recover_planes (and delete annotate_seed_z_extent,
+# _search_order, _nearest_view if nothing else references them):
+def recover_planes(sm, slices, params):
+    """v2.1: facet azimuths from cross-slice polygon edges, then per-azimuth
+    affine tier segmentation of the raw support column, refit exactly. No
+    soft-hull seed (it rounded real facets away -- verified on gem04); no
+    cross-view chaining (chains conflate facet and arris traces -- verified
+    on the toy gate)."""
+    fams = facet_azimuths(slices, min_edge_mm=params.facet_min_edge_mm)
+    planes = []
+    for az, z_lo, z_hi in fams:
+        d = np.angle(np.exp(1j * (sm.theta - az)))   # wrapped difference
+        i = int(np.argmin(np.abs(d)))
+        rows = sm.valid[:, i] & (sm.z >= z_lo - 0.1) & (sm.z <= z_hi + 0.1)
+        segs = segment_support(sm.z[rows], sm.h_right[rows, i],
+                               median_rows=params.facet_seg_median_rows,
+                               slope_jump=params.facet_slope_jump,
+                               min_seg_mm=params.facet_min_seg_mm,
+                               min_rows=params.facet_min_inliers)
+        for seg in segs:
+            mask = sm.valid[:, i] & (sm.z >= seg["z_lo"]) & (sm.z <= seg["z_hi"])
+            alpha, beta, rms, n = fit_affine_support(
+                sm.z, sm.h_right[:, i], mask,
+                min_inliers=params.facet_min_inliers)
+            if np.isnan(alpha):
+                continue
+            planes.append({"plane": plane_from_affine(sm.theta[i], alpha, beta),
+                           "rms": rms, "n_inliers": n, "source": "tangent"})
     planes += find_table_planes(sm, params.facet_table_width_frac)
     return _merge_planes(planes, params.facet_merge_deg)
 
 
 class FacetReconstructor:
     def reconstruct(self, dataset, params=None):
+        from gemscanner.reconstruction.strip_intersection import (
+            StripIntersectionReconstructor)
         params = params if params is not None else ReconstructionParams()
         sm = support_maps(dataset, params)
-        planes = recover_planes(sm, params)
+        slices = StripIntersectionReconstructor().slice_cross_sections(
+            dataset, params)
+        planes = recover_planes(sm, slices, params)
         if len(planes) < 4:
             raise ValueError("facet recovery failed: too few planes")
         mesh, verts, edges = planes_to_polytope(planes)
@@ -498,19 +588,19 @@ class FacetReconstructor:
         return mesh
 ```
 
-Note: the `from gemscanner.reconstruction.soft_hull import SoftHullReconstructor` inside the old `reconstruct` is deleted with it — soft_hull remains only as the pipeline fallback / standalone method.
+Note: the `from gemscanner.reconstruction.soft_hull import SoftHullReconstructor` inside the old `reconstruct` is deleted with it — soft_hull remains only as the pipeline fallback / standalone method. The deferred strip import avoids any import-cycle risk.
 
-- [ ] **Step 4: Run the regression gates, then the full suite**
+- [ ] **Step 4: Run the gates, then the full suite**
 
-Run: `.venv/Scripts/python.exe -m pytest tests/reconstruction/test_facet_reconstruct.py tests/reconstruction/test_pipeline_facet.py -q`
-Expected: PASS with the ORIGINAL tolerances (toy gem: median normal error <1°, volume <5%, watertight; pipeline: facet metadata present, ellipsoid falls back without crash). If the toy-gem test fails, DEBUG the detection (segments/chains) — do NOT touch the test. The toy gem's table is at z_max (table-up) and its culet apex at z_min; `find_table_planes` must cap only the top. This is also a much faster e2e than v1 (no soft-hull) — expect seconds, not minutes.
-Then: `.venv/Scripts/python.exe -m pytest -q` — full suite green (note: `seed_facets` tests still pass; it remains exported).
+Run: `.venv/Scripts/python.exe -m pytest tests/reconstruction/test_facet_fit.py tests/reconstruction/test_facet_reconstruct.py tests/reconstruction/test_pipeline_facet.py -q`
+Expected: PASS with the ORIGINAL e2e tolerances (toy gem: median normal error <1°, volume <5%, watertight — pre-verified at 0.338°/+2.97 %; pipeline: facet metadata present, ellipsoid falls back without crash). The recovered plane count on the toy gem is ~17 (girdle facets are narrower than the segmentation window at this scan resolution and are absorbed — the e2e asserts quality, not count). If a test fails, DEBUG — do NOT touch the tests.
+Then: `.venv/Scripts/python.exe -m pytest -q` — full suite green (`seed_facets`/`cluster_segments` tests still pass; both remain exported).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add gemscanner/reconstruction/base.py gemscanner/reconstruction/facet_fit.py
-git commit -m "feat(reconstruction): v2 facet detection live — segment+chain on raw support, no soft-hull seed"
+git add gemscanner/reconstruction/base.py gemscanner/reconstruction/facet_fit.py tests/reconstruction/test_facet_fit.py
+git commit -m "feat(reconstruction): v2.1 facet detection live — slice-edge azimuths + tier segmentation"
 ```
 
 ---
@@ -535,7 +625,7 @@ facet count (tangent vs extremal by rms==0), rms stats (median/max over tangent 
 - [ ] **Step 2: Run it**
 
 Run: `.venv/Scripts/python.exe scripts/validate_facet_gem04.py`
-Expected (quantitative gates): no fallback warning; tangent rms median ≤ 15 µm; extents within ~50 µm/axis of gem.stl; watertight; NO culet cap; tilt list shows the spike's tier structure. If gates fail, debug detection params (`facet_slope_jump`, `facet_min_views`, `facet_slope_tol`) against the spike output as reference — report honest numbers either way; do NOT tune to fake a pass.
+Expected (quantitative gates): no fallback warning; tangent rms median ≤ 15 µm (pre-verified 4.7–8 µm per tier at az-74); extents within ~50 µm/axis of gem.stl; watertight; NO culet cap; tilt list shows the verified tier structure (az-74 reference: pavilion ≈ +27/+39/+45/+50°, crown ≈ −58°; the spike's finer 19-step ladder was over-segmentation — spans it split fit ONE plane at ≤8 µm rms). If gates fail, debug detection params (`facet_slope_jump`, `facet_seg_median_rows`, `facet_min_edge_mm`) — report honest numbers either way; do NOT tune to fake a pass.
 
 - [ ] **Step 3: Write the results note**
 

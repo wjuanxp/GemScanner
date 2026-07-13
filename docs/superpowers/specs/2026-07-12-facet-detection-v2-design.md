@@ -72,15 +72,27 @@ front-end was discarding it.
    `facet_min_seg_mm` (default 0.25 mm) and ≥ `facet_min_inliers` rows. Per
    segment record `(i, z_lo, z_hi, α, β, rms)`. (Revised from the original
    slope-derivative criterion, which was numerically verified noise-fragile.)
-3. **Cross-view clustering into facets** (new): a real facet is tangent-visible
-   over a contiguous azimuth run and exactly edge-on at its centre. Cluster
-   segments across neighbouring views by z-band overlap (≥50 %) and slope
-   similarity (`|Δα|` ≤ `facet_slope_tol`, default 0.15); a cluster spanning ≥
-   `facet_min_views` (default 3) consecutive views is a facet candidate. The
-   **minimum-rms view in the cluster = edge-on azimuth θ\***.
-4. **Exact refit** — existing `fit_affine_support` on the cluster's z-band at
-   θ\* → existing `plane_from_affine` → exact plane `(a,b,c,d)`. Girdle facets
-   are the α≈0 segments; no special case.
+3. **Facet azimuths from cross-slice polygon edges** (new — AMENDED 2026-07-12,
+   user-approved): the strip cross-section polygons' edges ARE the facet traces.
+   Cluster all slice-polygon edges (outward-normal azimuth, length-weighted)
+   across z into azimuth families; edges shorter than `facet_min_edge_mm`
+   (default 0.35 mm, above the carve quantum R·Δθ) are noise from view
+   quantization at polygon corners and are skipped. Each family = one facet
+   azimuth θ\* (length-weighted circular mean; 0.2° accuracy on the toy gate).
+   *The spec's original cross-view chain clustering was pre-verified to FAIL
+   the toy gate (2.5° median): chains conflate facet traces with polygon-corner
+   (arris) traces — crown chains center on vertex directions. `cluster_segments`
+   remains in the module (tested) but is not used by the facet path.*
+4. **Per-azimuth tier segmentation + exact refit** — at each family's nearest
+   view, `segment_support` splits the raw `H(z)` into affine tiers
+   (`facet_seg_median_rows` default 17: at 1-px support quantization the
+   Theil–Sen slope noise is ≈ pixel/(2k·Δz); k=8 keeps it under half the
+   0.12 jump threshold — verified on the toy gate and gem04); each tier is
+   refit by the frozen `fit_affine_support` → `plane_from_affine` → exact
+   plane `(a,b,c,d)`. Girdle facets are the α≈0 tiers; no special case.
+   Note: tiers narrower than ~(2k+8) rows are absorbed into neighbours — on
+   gem04 the absorbed spans still fit ONE plane at ≤8 µm rms (they were
+   over-segmentation in the spike, not real distinct tiers).
 5. **Table/culet, orientation-aware** (new):
    - Orientation from the silhouette width profile: the z-extreme whose
      silhouette is wide + flat (width > `facet_table_width_frac` (default 0.3)
@@ -101,14 +113,15 @@ method and the fallback target.)
 ## 5. Params (replace v1 facet knobs where noted)
 
 ```
-facet_seg_median_rows: int = 9      # z-median before segmentation
-facet_slope_jump: float = 0.12     # min two-sided slope jump between facets
-facet_min_seg_mm: float = 0.25     # min segment z-span
-facet_min_views: int = 3           # min consecutive views per facet cluster
-facet_slope_tol: float = 0.15      # slope match for cross-view clustering
-facet_table_width_frac: float = 0.3  # table plateau width vs girdle width
-# retained: facet_min_inliers, facet_merge_deg, facet_fallback
-# dropped: facet_view_search, facet_axial_cos (v1-seed concepts)
+facet_seg_median_rows: int = 17     # Theil-Sen slope window (rows)
+facet_slope_jump: float = 0.12      # min two-sided slope jump between tiers
+facet_min_seg_mm: float = 0.25      # min tier z-span
+facet_min_edge_mm: float = 0.35     # min slice-polygon edge (carve-quantum filter)
+facet_table_width_frac: float = 0.3 # table plateau width vs girdle width
+facet_min_inliers: int = 8          # min rows per tier / refit inliers
+# retained: facet_merge_deg, facet_fallback
+# dropped: facet_view_search, facet_axial_cos (v1-seed), facet_min_views,
+#          facet_slope_tol (chain clustering, superseded by edge azimuths)
 ```
 
 ## 6. Acceptance criteria (gates, in order)
