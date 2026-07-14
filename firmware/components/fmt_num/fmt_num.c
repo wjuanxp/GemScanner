@@ -18,7 +18,7 @@ size_t fmt_thousands(long value, char *out, size_t n) {
         rev[t++] = digits[i];
     }
 
-    char final[36];
+    char final[36];    // sign + grouped digits + NUL (64-bit long worst case: 1+20+6+1 = 28)
     int f = 0;
     if (neg) final[f++] = '-';
     for (int i = t - 1; i >= 0; i--) final[f++] = rev[i];
