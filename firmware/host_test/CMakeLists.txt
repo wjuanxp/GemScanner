@@ -31,3 +31,7 @@ add_pure_test(test_motion_math motion_math
 add_pure_test(test_ramp ramp
   ${COMPONENTS_DIR}/ramp/ramp.c
   test_ramp.c)
+
+add_pure_test(test_fmt_num fmt_num
+  ${COMPONENTS_DIR}/fmt_num/fmt_num.c
+  test_fmt_num.c)
