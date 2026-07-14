@@ -1,6 +1,7 @@
 // firmware/main/status_display.c
 #include "status_display.h"
 #include "pins.h"
+#include "fmt_num.h"
 #include "led_strip.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -19,13 +20,44 @@ static const char *TAG = "status_display";
 #define LCD_BL_DUTY_PCT   50          // backlight brightness (0-100)
 #define LCD_BL_RES        LEDC_TIMER_8_BIT   // 0..255
 
+#define COL_BG        0x0B0C0E
+#define COL_VALUE     0xE8EAED
+#define COL_CAPTION   0x8A9099
+#define COL_DIVIDER   0x2A2D31
+
+// Per-state palette, indexed by disp_state_t (DISCONNECTED, IDLE, MOVING, SETTLING).
+static const uint32_t k_accent[]   = { 0x5A6B8C, 0x22C55E, 0xF5A623, 0x22D3EE };
+static const char    *k_word[]     = { "OFFLINE", "READY", "ROTATING", "SETTLING" };
+static const uint8_t  k_led[][3]   = { {10,14,24}, {0,34,12}, {40,22,0}, {0,28,28} };
+
 static led_strip_handle_t s_led;
+static lv_obj_t *s_bar, *s_dot, *s_div;
 static lv_obj_t *s_l_state, *s_l_angle, *s_l_steps;
 
 static void led_set(uint8_t r, uint8_t g, uint8_t b) {
     // Onboard LED reads RGB order; led_strip's WS2812 model emits GRB, so swap R<->G here.
     led_strip_set_pixel(s_led, 0, g, r, b);
     led_strip_refresh(s_led);
+}
+
+// A plain filled block with no border/padding/scroll — used for the accent bar and dot.
+static lv_obj_t *make_block(lv_obj_t *parent, int w, int h, int radius) {
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    lv_obj_set_style_radius(o, radius, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    return o;
+}
+
+static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color, int y) {
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+    lv_obj_align(l, LV_ALIGN_TOP_MID, 0, y);
+    return l;
 }
 
 static void lcd_init(void) {
@@ -73,9 +105,35 @@ static void lcd_init(void) {
         .flags = { .swap_bytes = true } };   // RGB565 byte order for ST7789 (fixes colour fringe)
     lv_display_t *disp = lvgl_port_add_disp(&dc);
     lv_obj_t *scr = lv_display_get_screen_active(disp);   // LVGL 9.x
-    s_l_state = lv_label_create(scr); lv_obj_align(s_l_state, LV_ALIGN_TOP_LEFT, 6, 10);
-    s_l_angle = lv_label_create(scr); lv_obj_align(s_l_angle, LV_ALIGN_TOP_LEFT, 6, 40);
-    s_l_steps = lv_label_create(scr); lv_obj_align(s_l_steps, LV_ALIGN_TOP_LEFT, 6, 70);
+
+    // Dark canvas, no scrolling.
+    lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Accent top bar (full width) + accent dot; colors set per-state in _set().
+    s_bar = make_block(scr, 172, 6, 0);
+    lv_obj_align(s_bar, LV_ALIGN_TOP_MID, 0, 0);
+    s_dot = make_block(scr, 12, 12, LV_RADIUS_CIRCLE);
+    lv_obj_align(s_dot, LV_ALIGN_TOP_MID, 0, 90);
+
+    // Hero state word (accent color set per-state).
+    s_l_state = make_label(scr, &lv_font_montserrat_28, COL_VALUE, 110);
+
+    // Hairline divider.
+    s_div = make_block(scr, 140, 1, 0);
+    lv_obj_set_style_bg_color(s_div, lv_color_hex(COL_DIVIDER), 0);
+    lv_obj_align(s_div, LV_ALIGN_TOP_MID, 0, 160);
+
+    // Angle value + caption.
+    s_l_angle = make_label(scr, &lv_font_montserrat_28, COL_VALUE, 185);
+    lv_obj_t *cap_a = make_label(scr, &lv_font_montserrat_14, COL_CAPTION, 222);
+    lv_label_set_text(cap_a, "ANGLE");
+
+    // Steps value + caption.
+    s_l_steps = make_label(scr, &lv_font_montserrat_20, COL_VALUE, 250);
+    lv_obj_t *cap_s = make_label(scr, &lv_font_montserrat_14, COL_CAPTION, 280);
+    lv_label_set_text(cap_s, "STEPS");
 }
 
 void status_display_init(void) {
@@ -88,18 +146,18 @@ void status_display_init(void) {
 }
 
 void status_display_set(disp_state_t state, double angle_deg, long steps) {
-    switch (state) {
-        case ST_DISCONNECTED: led_set(0, 0, 12); break;
-        case ST_IDLE:         led_set(0, 30, 0); break;
-        case ST_MOVING:       led_set(40, 20, 0); break;
-        case ST_SETTLING:     led_set(0, 25, 25); break;
-    }
-    static const char *names[] = { "DISCONNECTED", "IDLE", "MOVING", "SETTLING" };
+    lv_color_t accent = lv_color_hex(k_accent[state]);
+    led_set(k_led[state][0], k_led[state][1], k_led[state][2]);
+
     char a[32], s[32];
-    snprintf(a, sizeof(a), "angle=%.2f", angle_deg);
-    snprintf(s, sizeof(s), "steps=%ld", steps);
+    snprintf(a, sizeof(a), "%.2f\xC2\xB0", angle_deg);   // UTF-8 degree sign (U+00B0)
+    fmt_thousands(steps, s, sizeof(s));
+
     if (lvgl_port_lock(50)) {
-        lv_label_set_text(s_l_state, names[state]);
+        lv_obj_set_style_bg_color(s_bar, accent, 0);
+        lv_obj_set_style_bg_color(s_dot, accent, 0);
+        lv_obj_set_style_text_color(s_l_state, accent, 0);
+        lv_label_set_text(s_l_state, k_word[state]);
         lv_label_set_text(s_l_angle, a);
         lv_label_set_text(s_l_steps, s);
         lvgl_port_unlock();
