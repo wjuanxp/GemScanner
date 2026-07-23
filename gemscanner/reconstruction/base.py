@@ -12,6 +12,20 @@ class ReconstructionParams:
     # radius field along z (mesh space, cheapest). Both median = facet-preserving.
     edge_median_rows: int = 0
     axial_median_rows: int = 0
+    # sub-pixel edge localisation: place each silhouette edge where the row's
+    # intensity profile crosses the threshold instead of on the nearest whole
+    # column. Removes the ~1 px edge quantisation that terracing feeds on.
+    # Measured on gem04 (holder_mask_rows=705, 30 views): per-row edge
+    # roughness (median |d2 edge/dz2|) 12.62 -> 2.18 um, -83%; mean edge shift
+    # only +0.43 um, so it refines rather than rebiases -- real backlit edges
+    # are anti-aliased and Otsu lands mid-ramp, making the crossings symmetric.
+    # (A hard synthetic step has no ramp and does shift ~half a pixel per side.)
+    # Default ON since 2026-07-23: user visually signed off on the gem04 strip
+    # + facet sub-pixel meshes ("best so far"), clearing the facet v2.3 visual
+    # gate. Disable per-run for a whole-pixel baseline (CLI --no-subpixel-edges,
+    # GUI checkbox). Consumed by method="strip" and method="facet"; soft_hull
+    # carves from a distance transform and ignores it.
+    subpixel_edges: bool = True
     # "strip" = fast per-slice visual hull (default); "soft_hull" = anti-aliased
     # volumetric visual hull + marching cubes (metrology-grade, needs scikit-image)
     method: str = "strip"

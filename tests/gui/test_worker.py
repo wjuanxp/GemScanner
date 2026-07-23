@@ -65,9 +65,11 @@ def test_reconstruct_op_forwards_recon_kwargs(qtbot):
     try:
         with qtbot.waitSignal(w.result, timeout=3000):
             w.post("reconstruct", out_dir="x", holder_mask_rows=2,
-                   method="soft_hull", edge_median_rows=9, axial_median_rows=0)
+                   method="soft_hull", edge_median_rows=9, axial_median_rows=0,
+                   subpixel_edges=False)
         assert w._session.kw["method"] == "soft_hull"
         assert w._session.kw["edge_median_rows"] == 9
+        assert w._session.kw["subpixel_edges"] is False
     finally:
         w.shutdown()
         w.wait(3000)

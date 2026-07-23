@@ -119,9 +119,10 @@ class HardwareWorker(QThread):
         self.result.emit("scan", out_dir)
 
     def _op_reconstruct(self, out_dir, holder_mask_rows=0, smooth=0,
-                        method="strip", edge_median_rows=0, axial_median_rows=0):
+                        method="strip", edge_median_rows=0, axial_median_rows=0,
+                        subpixel_edges=True):
         _, watertight, extents = self._session.reconstruct(
             out_dir, holder_mask_rows=holder_mask_rows, smooth=smooth,
             method=method, edge_median_rows=edge_median_rows,
-            axial_median_rows=axial_median_rows)
+            axial_median_rows=axial_median_rows, subpixel_edges=subpixel_edges)
         self.result.emit("reconstruct", (watertight, extents))
