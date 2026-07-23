@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from gemscanner.coords import row_to_z, axis_column_at_row, column_to_projection
-from gemscanner.vision.silhouette import extract_silhouette, row_spans
+from gemscanner.vision.silhouette import silhouette_row_spans
 from gemscanner.geometry.halfplane import clip_convex_polygon
 from gemscanner.reconstruction.base import ReconstructionParams, SliceResult
 
@@ -47,8 +47,10 @@ class StripIntersectionReconstructor:
         frames = []
         for i in range(dataset.frame_count()):
             img = dataset.load_frame(i)
-            mask = extract_silhouette(img, params.threshold, params.holder_mask_rows)
-            spans = median_smooth_spans(row_spans(mask), params.edge_median_rows)
+            raw = silhouette_row_spans(img, params.threshold,
+                                       params.holder_mask_rows,
+                                       params.subpixel_edges)
+            spans = median_smooth_spans(raw, params.edge_median_rows)
             th = math.radians(m.angles_deg[i])
             normal = np.array([math.cos(th), -math.sin(th)])
             frames.append((spans, normal))

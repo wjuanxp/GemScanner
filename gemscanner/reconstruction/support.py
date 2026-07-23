@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 from gemscanner.coords import row_to_z, axis_column_at_row, column_to_projection
-from gemscanner.vision.silhouette import extract_silhouette, row_spans
+from gemscanner.vision.silhouette import silhouette_row_spans
 from gemscanner.reconstruction.base import ReconstructionParams
 
 
@@ -31,8 +31,9 @@ def support_maps(dataset, params=None):
 
     for i in range(V):
         img = dataset.load_frame(i)
-        mask = extract_silhouette(img, params.threshold, params.holder_mask_rows)
-        spans = row_spans(mask)
+        spans = silhouette_row_spans(img, params.threshold,
+                                     params.holder_mask_rows,
+                                     params.subpixel_edges)
         for v in range(H):
             L, R = spans[v]
             if L < 0:

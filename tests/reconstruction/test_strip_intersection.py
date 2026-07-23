@@ -62,3 +62,18 @@ def test_slices_empty_above_top(tmp_path):
     slices = StripIntersectionReconstructor().slice_cross_sections(ds)
     tops = [s for s in slices if s.z_mm > 5.2]
     assert all(s.polygon is None for s in tops)
+
+
+def test_subpixel_edges_are_wired_into_the_strip_carve(tmp_path):
+    out = generate_ellipsoid_scan(str(tmp_path / "s"), rx=4, ry=3, rz=5,
+                                  n_views=60, mm_per_px=0.05, width=400, height=400)
+    ds = load_dataset(out)
+    r = StripIntersectionReconstructor()
+    base = r.reconstruct(ds, ReconstructionParams(threshold=128,
+                                                  subpixel_edges=False))
+    sub = r.reconstruct(ds, ReconstructionParams(threshold=128,
+                                                 subpixel_edges=True))
+    # generator renders the inscribed pixel run, so sub-pixel edges recover
+    # volume rather than losing it -- but only by a fraction of a pixel
+    assert sub.volume > base.volume
+    assert sub.volume < 1.10 * base.volume

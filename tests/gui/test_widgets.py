@@ -48,17 +48,31 @@ def test_reconstruction_panel_choices_map_to_params(qtbot):
     from gemscanner.gui.reconstruction_panel import ReconstructionPanel
     p = ReconstructionPanel()
     qtbot.addWidget(p)
-    # default: fast strip visual hull, no de-terracing
+    # default: fast strip visual hull, no de-terracing, sub-pixel edges on
     assert p.selected_kwargs() == {
-        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 0}
+        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 0,
+        "subpixel_edges": True}
     p.set_index(1)                                  # "Smooth edges (recommended)"
     assert p.selected_kwargs() == {
-        "method": "strip", "edge_median_rows": 9, "axial_median_rows": 0}
+        "method": "strip", "edge_median_rows": 9, "axial_median_rows": 0,
+        "subpixel_edges": True}
     p.set_index(2)                                  # "Smooth surface"
     assert p.selected_kwargs() == {
-        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 9}
+        "method": "strip", "edge_median_rows": 0, "axial_median_rows": 9,
+        "subpixel_edges": True}
     p.set_index(3)                                  # "High accuracy (slow)"
     assert p.selected_kwargs()["method"] == "soft_hull"
+
+
+def test_reconstruction_panel_subpixel_checkbox_toggles_kwarg(qtbot):
+    from gemscanner.gui.reconstruction_panel import ReconstructionPanel
+    p = ReconstructionPanel()
+    qtbot.addWidget(p)
+    assert p.selected_kwargs()["subpixel_edges"] is True     # default on
+    p.set_subpixel_edges(False)
+    assert p.selected_kwargs()["subpixel_edges"] is False
+    p.set_subpixel_edges(True)
+    assert p.selected_kwargs()["subpixel_edges"] is True
 
 
 def test_wizard_panel_steps_and_signals(qtbot):

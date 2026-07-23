@@ -5,10 +5,15 @@ backlit gemstone on a motorized rotary stage; the silhouettes captured around a 
 revolution are fused into a watertight 3-D mesh by **shape-from-silhouette** (visual
 hull). The result is an `.stl` you can measure, catalogue, or 3-D print.
 
-![A reconstructed gem showing horizontal terracing](docs/gemStrikeMarks.png)
+![Three reconstructions of the same gem: raw strip carve with terracing, the sub-pixel-edge default with the terracing gone, and the faceted polyhedron](docs/gem04_results.png)
 
-*A raw scan showing horizontal "strike line" terracing — a reconstruction artifact
-the [selectable methods](#reconstruction-methods) remove while keeping real facets.*
+*The same gem04 scan reconstructed three ways. **Left:** the raw per-row strip carve
+shows horizontal "strike line" terracing — a reconstruction artifact, not real
+geometry. **Middle:** [sub-pixel edge localisation](#sub-pixel-edge-localisation)
+(now the default) places each silhouette edge on its intensity crossing instead of
+the nearest whole pixel, removing the artifact at its source. **Right:** the
+[faceted method](#reconstruction-methods) fits the silhouettes into a watertight
+planar polyhedron.*
 
 ## How it works
 
@@ -95,6 +100,36 @@ them while preserving genuine facet edges (all measured on a real 17 µm/px scan
 ¹ Reduction of the horizontal-band artifact on a real 17 µm/px scan; larger median
 windows remove more (edge window 15 reaches ≈ −96%).
 
+### Sub-pixel edge localisation
+
+The options above *denoise* the terracing after the fact. `subpixel_edges`
+(**on by default**; CLI: `--no-subpixel-edges` for a whole-pixel baseline, GUI:
+the *Sub-pixel edges* checkbox) attacks its source instead: rather than snapping
+each silhouette edge to the nearest whole column, it places the edge where that
+row's intensity profile crosses the threshold, by linear interpolation between
+the bracketing pixel pair. Edge position becomes continuous instead of quantised
+to 17 µm, so rows whose true edges differ by a fraction of a pixel stop reporting
+the same value.
+
+Measured on `scans/gem04` (`holder_mask_rows=705`, 30 views):
+
+| | whole-pixel | sub-pixel |
+|---|---|---|
+| per-row edge roughness (median \|d²edge/dz²\|) | 12.62 µm | **2.18 µm** (−83%) |
+| distinct edge values per view | 217 of 378 rows | 374 of 378 rows |
+| mean edge shift | — | +0.43 µm |
+
+The shift is negligible because real backlit edges are anti-aliased and Otsu
+lands mid-ramp, so the two crossings move symmetrically. (A hard *synthetic*
+step has no ramp and does shift ~half a pixel per side — synthetic accuracy
+figures are not comparable across the flag.) Whole-slice results move very
+little: `strip` volume +0.5%, `facet` +0.04%, both still watertight; `facet`
+recovers 208 → 232 planes.
+
+On by default since the gem04 strip + facet sub-pixel meshes cleared the
+`method="facet"` v2.3 visual sign-off gate. Ignored by `method="soft_hull"`,
+which carves from a distance transform instead of spans.
+
 ² The faceted method doesn't carve per-slice rings, so terracing doesn't arise — it
 recovers the facet planes directly.
 
@@ -119,6 +154,11 @@ Requires `scipy`.
 ```powershell
 # Reconstruct a mesh from an existing scan dataset (no hardware)
 .\.venv\Scripts\python -m gemscanner.cli reconstruct scans\gem01 -o gem.stl
+
+# Choose the method, mask the pedestal rows, and use sub-pixel edges
+# (this is the gem04 faceted recipe as a one-liner)
+.\.venv\Scripts\python -m gemscanner.cli reconstruct scans\gem04 -o gem.stl `
+    --method facet --holder-mask-rows 705 --subpixel-edges
 
 # View a mesh in an interactive Open3D window
 .\.venv\Scripts\python -m gemscanner.cli view gem.stl
