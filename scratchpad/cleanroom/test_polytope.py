@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 from scratchpad.cleanroom.polytope import (
-    affine_to_plane, plane_to_affine, planes_to_mesh, merge_planes)
+    affine_to_plane, plane_to_affine, planes_to_mesh, merge_planes, extremal_caps)
 
 def _box_planes(hx, hy, hz):
     return [(1,0,0,hx),(-1,0,0,hx),(0,1,0,hy),(0,-1,0,hy),(0,0,1,hz),(0,0,-1,hz)]
@@ -27,3 +28,21 @@ def test_merge_collapses_near_duplicates():
     assert len(out) == 2
     kept = [r for r in out if abs(r["plane"][0]-1) < 1e-9][0]
     assert kept["rms"] == 0.005   # keeps lower-rms of the merged pair
+
+def test_planes_to_mesh_raises_valueerror_when_unbounded():
+    # bounded in x,y but open in z -> not a closed region -> ValueError (not QhullError)
+    open_planes = [(1,0,0,3.0),(-1,0,0,3.0),(0,1,0,2.0),(0,-1,0,2.0)]
+    with pytest.raises(ValueError):
+        planes_to_mesh(open_planes)
+
+def test_extremal_caps_flags_table_skips_culet():
+    import numpy as np
+    from scratchpad.cleanroom.support_samples import SupportSamples
+    from scratchpad.cleanroom.polytope import extremal_caps
+    z = np.linspace(-2.0, 2.0, 81)
+    theta = np.radians(np.arange(0, 360, 2.0))
+    r = np.clip(2.0 * (2.0 - z) / 4.0, 0.02, None)   # ~2.0 wide at bottom -> ~0 at top
+    h = np.tile(r[:, None], (1, len(theta)))
+    s = SupportSamples(theta=theta, z=z, h=h, valid=np.ones_like(h, bool))
+    caps = extremal_caps(s, width_frac=0.3)
+    assert sorted(c["plane"][2] for c in caps) == [-1.0]   # exactly one cap, on the wide bottom (c<0)

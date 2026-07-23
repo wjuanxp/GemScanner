@@ -1,6 +1,7 @@
 import numpy as np
 import trimesh
 from scipy.spatial import HalfspaceIntersection
+from scipy.spatial import QhullError
 from scipy.optimize import linprog
 
 
@@ -36,10 +37,13 @@ def _interior_point(halfspaces):
 
 def planes_to_mesh(planes):
     hs = np.array([[a, b, c, -d] for (a, b, c, d) in planes], float)
-    interior = _interior_point(hs)
-    hi = HalfspaceIntersection(hs, interior)
-    pts = hi.intersections
-    hull = trimesh.Trimesh(vertices=pts).convex_hull
+    try:
+        interior = _interior_point(hs)
+        hi = HalfspaceIntersection(hs, interior)
+        pts = hi.intersections
+        hull = trimesh.Trimesh(vertices=pts).convex_hull
+    except (QhullError, ValueError, IndexError) as exc:
+        raise ValueError(f"half-spaces do not bound a closed region: {exc}")
     return hull, np.asarray(hull.vertices, float), np.asarray(hull.edges_unique, int)
 
 
@@ -80,23 +84,27 @@ def facet_rms(plane, samples, az_tol_deg=6.0, resid_tol_mm=0.05):
 
 
 def extremal_caps(samples, width_frac=0.3):
-    """Table/culet caps: cap a z-extreme only if the silhouette there is a wide
-    flat table (> width_frac * girdle width). Pointed culet gets no cap."""
-    # per-row mean diameter across views (h_right + mirror = 2*h assuming
-    # centred; use h at theta and theta+pi via full 360 coverage)
-    width = np.nanmax(samples.h, axis=1) + np.nanmax(-samples.h, axis=1)
-    ok = np.isfinite(width) & samples.valid.any(axis=1)
+    """Table/culet caps: cap a z-extreme only if the silhouette there is wide
+    (row radius > width_frac * girdle radius). A pointed culet (radius -> 0)
+    gets no cap. Radius proxy = max right-edge support over all 360-deg views
+    at that height; guarded so all-NaN (fully masked) rows emit no warning."""
+    valid_row = samples.valid.any(axis=1)
+    radius = np.full(samples.z.shape, np.nan)
+    if valid_row.any():
+        radius[valid_row] = np.nanmax(samples.h[valid_row], axis=1)
+    ok = np.isfinite(radius) & valid_row
     if not ok.any():
         return []
-    zv, wv = samples.z[ok], width[ok]
-    order = np.argsort(zv); zv, wv = zv[order], wv[order]
-    girdle = float(np.nanmax(wv))
+    zv, rv = samples.z[ok], radius[ok]
+    order = np.argsort(zv); zv, rv = zv[order], rv[order]
+    girdle = float(np.max(rv))
     if girdle <= 0:
         return []
-    band = max(3, int(0.2 / max(abs(zv[1]-zv[0]), 1e-6)))
+    dz = abs(zv[1] - zv[0]) if len(zv) > 1 else 1.0
+    band = max(3, int(0.2 / max(dz, 1e-6)))
     caps = []
-    if np.nanmean(wv[-band:]) > width_frac * girdle:
+    if np.mean(rv[-band:]) > width_frac * girdle:
         caps.append(dict(plane=(0.0, 0.0, 1.0, float(zv[-1])), rms=0.0, source="cap"))
-    if np.nanmean(wv[:band]) > width_frac * girdle:
+    if np.mean(rv[:band]) > width_frac * girdle:
         caps.append(dict(plane=(0.0, 0.0, -1.0, float(-zv[0])), rms=0.0, source="cap"))
     return caps
