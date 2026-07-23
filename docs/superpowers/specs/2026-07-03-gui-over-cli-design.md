@@ -37,7 +37,9 @@ existing code:
   and `acquisition.prescan`.
 - `calibrate_axis(n_probe, progress, cancel)` — rotates a revolution, fits `axis_column`.
 - `run_scan(params, progress, cancel)` — drives the scan, writes the dataset.
-- `reconstruct(out_dir, smooth)` — builds + smooths the mesh, returns watertight/extents.
+- `reconstruct(out_dir, holder_mask_rows, smooth, method, edge_median_rows, axial_median_rows, subpixel_edges)`
+  — builds + smooths the mesh, returns watertight/extents. `subpixel_edges` (default `True`, added
+  2026-07-23) places each silhouette edge on its intensity crossing instead of the nearest whole pixel.
 
 This layer has no Qt imports and is fully testable headless with `MockCamera` / `SceneCamera` +
 `FakeFirmware`.
@@ -67,6 +69,13 @@ preserved.
     the gem hits ~0 and the background is bright/uniform.
 - `WizardPanel` — the per-gem step sequence (Section 5).
 - `QueuePanel` — add / remove / reorder gems.
+- `ReconstructionPanel` — how the mesh is built from the silhouettes:
+  - A method-preset combo (Fast strip hull / Smooth edges / Smooth surface / High accuracy soft-hull /
+    Faceted gem), each mapping to reconstruction kwargs.
+  - A **Sub-pixel edges** checkbox (added 2026-07-23, **default checked**) — orthogonal to the preset:
+    it applies to the strip and facet methods (soft-hull ignores it), so it sets `subpixel_edges` in
+    `selected_kwargs()` independently of the combo choice. `set_subpixel_edges(on)` toggles it and it is
+    threaded `ReconstructionPanel → main_window → worker._op_reconstruct → session.reconstruct`.
 
 ### Visual style
 
