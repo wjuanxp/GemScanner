@@ -2,6 +2,7 @@ import numpy as np
 from scratchpad.cleanroom.support_samples import synthetic_support_from_planes
 from scratchpad.cleanroom.polytope import planes_to_mesh, merge_planes
 from scratchpad.cleanroom.cand_c_egi import reconstruct_egi
+from scratchpad.cleanroom.cand_a_ransac import reconstruct_ransac
 
 def _bipyramid_planes(n=6, slope=1.2, r=2.0):
     planes = []
@@ -79,3 +80,26 @@ def test_egi_recovers_asymmetric_gem():
     err = _normal_error_deg(recs, [(n[0], n[1], n[2], 0.0) for n in truth_n])
     assert np.median(err) < 3.0                                    # recovered normals are real facets
     assert abs(mesh.volume - truth_mesh.volume) / truth_mesh.volume < 0.06   # no spurious volume-carving
+
+
+def test_ransac_recovers_bipyramid():
+    truth = _bipyramid_planes()
+    s = _samples_for(truth)
+    recs = merge_planes(reconstruct_ransac(s, n_iter=1500, seed=1))
+    assert len(recs) >= 12
+    err = _normal_error_deg(recs, truth)
+    assert np.median(err) < 3.0
+    mesh, _, _ = planes_to_mesh([r["plane"] for r in recs])
+    assert mesh.is_watertight
+
+
+def test_ransac_recovers_asymmetric_gem():
+    planes = _asymmetric_gem_planes()
+    truth_mesh, _, _ = planes_to_mesh(planes)
+    s = _samples_for(planes, nth=360, nz=220)
+    recs = merge_planes(reconstruct_ransac(s, n_iter=3000, seed=1))
+    mesh, _, _ = planes_to_mesh([r["plane"] for r in recs])
+    truth_n = _unique_normals(np.array(truth_mesh.face_normals))
+    err = _normal_error_deg(recs, [(n[0], n[1], n[2], 0.0) for n in truth_n])
+    assert np.median(err) < 3.0
+    assert abs(mesh.volume - truth_mesh.volume) / truth_mesh.volume < 0.06
