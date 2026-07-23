@@ -28,6 +28,8 @@ the shipped one does not (notably the residual Z +77 µm extent gap).
   calibration for this mount; not carried in the manifest — supplied
   explicitly, as in `scripts/validate_facet_gem04.py`).
 - Reference: `scans/gem04/gem.stl` (dimensional ground truth).
+  **[Superseded by the results note §6: gem.stl is NOT independent ground
+  truth — it is a Taubin-smoothed strip reconstruction of this same scan.]**
 
 ## The target and the key representation
 

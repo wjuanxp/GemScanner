@@ -107,6 +107,22 @@ Reproduced independently by the reviewer during Task 7 review, byte-for-byte:
 strike energy for CONTROL = 6.822677793901232 µm; every candidate/benchmark
 strike energy ≈ 5.7e-13 µm (genuinely zero, not a NaN artifact).
 
+**Caveat on `rmsMed`: not comparable to v2.3's 5 µm figure.** The `rmsMed`
+column above (411.5 / 341.1 / 353.6 µm) and §1's "5 µm median facet RMS" for
+v2.3 are **different metrics** computed differently, and a reader will
+otherwise wrongly conclude the candidates are ~80× worse at facet fitting
+than v2.3. Running the clean-room `facet_rms` on the **shipped v2.3 planes**
+(from `scans/gem04/gem_facet_v23_preview.stl`) over the same real gem04
+support samples gives:
+```
+n=54 planes: min 0.208 mm, median 0.612 mm, max 5.669 mm
+fraction <= 0.15 mm: 0.00   fraction <= 0.70 mm: 0.59
+```
+i.e. v2.3's own signed-off facets score *worse* on this metric than every
+candidate's median. `rmsMed` here is a relative, within-this-table gate
+only; it is **not** comparable to v2.3's per-z-band 5 µm figure and must not
+be read as a quality ranking against v2.3.
+
 ## 5. The headline result: the strike metric separates on real data
 
 **Confirmed, and by a wide margin.** CONTROL strip (space-carving,
@@ -125,13 +141,40 @@ synthetic fixtures (`gemscanner-striation-fix` memory).
 ## 6. The major methodological finding: `gem.stl` is not independent ground truth
 
 **`scans/gem04/gem.stl` is not an independent dimensional reference.**
-Controller-verified: it has **116640 faces and 58322 vertices** — identical,
-not merely similar, to the CONTROL strip mesh generated fresh in this
-investigation (180 views × 324 valid slices × 2 triangles/quad = 116640
-faces). `gem.stl` is itself a strip/visual-hull output of the same scan, not
-an independent CAD model or caliper/CMM measurement. Its own strike-line
-energy is **1.256 µm** — non-zero, and the fine terracing texture is visible
-in the leftmost panel of the comparison render.
+Applying this repo's own Taubin smoother to a freshly regenerated strip
+reconstruction reproduces `gem.stl` **exactly**:
+`smooth_mesh(reconstruct_dataset("scans/gem04", method="strip", holder_mask_rows=705), 10)`
+matches `scans/gem04/gem.stl` to a nearest-neighbour max distance of
+**0.0000 mm** over all 58322 vertices, with identical extents and identical
+strike energy. `gem.stl` is regenerable today via this repo's own
+`gemscanner scan --smooth 10` (`gemscanner/cli.py`).
+
+Measured ladder:
+```
+taubin  0: nn med 0.0028 max 0.0178 mm | uniq_z   324 | strike 6.823 | ext [8.3387 7.8361 5.4980]
+taubin  5: nn med 0.0005 max 0.0075 mm | uniq_z 58317 | strike 1.511 | ext [8.3397 7.8356 5.5029]
+taubin 10: nn med 0.0000 max 0.0000 mm | uniq_z 58317 | strike 1.256 | ext [8.3381 7.8366 5.5005]
+gem.stl  :                              uniq_z 57739 | strike 1.256 | ext [8.3381 7.8366 5.5005]
+```
+
+The reference is a **Taubin-smoothed** visual hull — this is why `gem.stl`
+strikes 1.256 µm while the fresh strip control (unsmoothed) strikes 6.8 µm:
+smoothing reduces strike energy but does not eliminate it (§4-5's CONTROL row
+above is the unsmoothed version of the same reconstruction). The note's own
+table evidence corroborates this from a different angle: CONTROL strip is
+only +1/−1/−2 µm from `gem.stl` in extents — consistent with both being the
+same underlying reconstruction at different smoothing levels, not
+independent measurements.
+
+Note that the vertex count is **not** independent evidence for this claim:
+for any watertight genus-0 triangle mesh, V = F/2 + 2 exactly
+(116640/2 + 2 = 58322), so "matching face and vertex counts" is one
+statistic, not two, and a skeptic can further object that the fresh strip
+mesh has 324 unique z-levels vs `gem.stl`'s 57739 (resolved above by the
+smoothing ladder: Taubin smoothing raises unique-z from 324 to 58317,
+consistent with `gem.stl`'s 57739). The argument for provenance rests
+entirely on the exact reproduction (0.0000 mm nearest-neighbour distance),
+not on face/vertex counts.
 
 **Consequence, stated plainly:** every "extents delta vs `gem.stl`" number in
 this investigation — and in the shipped v2.3 validation, including its
@@ -153,10 +196,13 @@ provenance.
 
 ## 7. The honest negative results
 
-- **Candidates are 10–100× less dimensionally accurate than v2.3 on real
-  data.** v2.3: dX/dY/dZ = +16/+40/+77 µm. Candidates: Cand-A +1532/+1075/+159,
-  Cand-B +1845/+1210/+151, Cand-C +645/+401/−226 µm. All three are
-  systematically *larger* than `gem.stl` in X/Y, not merely noisier.
+- **Candidates are 2×–115× less accurate than v2.3 depending on axis (worst
+  in X/Y, closest in Z) on real data.** v2.3: dX/dY/dZ = +16/+40/+77 µm.
+  Candidates: Cand-A +1532/+1075/+159, Cand-B +1845/+1210/+151, Cand-C
+  +645/+401/−226 µm. The spread is axis-dependent, not uniform: dZ is the
+  closest axis (159 vs v2.3's 77 = 2.1×; 151 = 2.0×; −226 = 2.9×), while dX is
+  the worst (Cand-B: 1845 vs v2.3's 16 = 115×). All three are systematically
+  *larger* than `gem.stl` in X/Y, not merely noisier.
 
 - **All three needed `rms_tol_mm` loosened 0.15 → 0.7 uniformly just to
   produce a mesh at all.** At 0.15 (the value tuned on exact, noise-free
@@ -166,7 +212,39 @@ provenance.
   Cand-C: 1). The same 0.7 mm was applied to all three so the comparison
   stayed apples-to-apples, not tuned per-candidate to flatter it — reported
   even though the resulting facet counts (216/20/84) are wildly different at
-  equal tolerance.
+  equal tolerance. The tolerance sweep that justified 0.7 mm (from the
+  investigation's working task-7 notes, inlined here so it survives the
+  session's working artifacts):
+  ```
+  | tol | Cand-A RANSAC | Cand-B dual | Cand-C EGI |
+  |---|---|---|---|
+  | 0.15 | FAIL (3 tangent facets survive) | FAIL (0 facets survive) | FAIL (1 facet survives) |
+  | 0.30 | OK, 53 facets, ext=[12.74,10.79,5.65]mm | OK, 8 facets, ext=[13.31,10.85,5.85]mm | OK, 25 facets, ext=[11.69,10.31,5.62]mm |
+  | 0.50 | OK, 166 facets, ext=[10.63,9.25,5.59]mm | OK, 16 facets, ext=[10.72,9.64,5.66]mm | OK, 59 facets, ext=[10.39,9.15,5.39]mm |
+  | 0.70 | OK, 216 facets, ext=[9.87,8.91,5.66]mm | OK, 20 facets, ext=[10.18,9.05,5.65]mm | OK, 84 facets, ext=[8.98,8.24,5.27]mm |
+  | 1.00 | OK, 255 facets, ext=[9.72,8.90,5.60]mm | OK, 20 facets, ext=[10.18,9.05,5.65]mm (unchanged from 0.70) | OK, 88 facets, ext=[8.82,8.24,5.14]mm |
+  ```
+  `0.7` was picked from the raw (pre-merge, pre-filter) `facet_rms`
+  distributions, not by trial-and-error against the final table: Candidate B
+  shows a clean gap (21 clusters at rms<=0.65mm real facets, 3 at
+  rms in [1.39, 1.58]mm girdle-crossing artifacts, 7 at rms>=4.7mm gross
+  outliers — 0.7mm sits in the gap); Candidates A and C have no such clean
+  gap (continuous from ~0.12mm to ~1.8-2.3mm before a jump to garbage above
+  ~3.5-4.7mm) but their mesh extents stabilize (diminishing marginal change)
+  once tol reaches ~0.7-1.0mm, and 0.7 is the conservative end of that
+  plateau. **Correction to the cause:** `bakeoff.py`'s module
+  docstring attributes the non-zero rms floor to "real silhouette
+  threshold/quantization noise" — the §4 `rmsMed` caveat above refutes this: the
+  exact, accurate, shipped v2.3 planes *also* score 0.208–5.669 mm on the
+  same metric over the same real data, so noise in the input is not the
+  cause. The actual floor is set by `facet_rms`'s own construction: it
+  averages residuals over the *entire* valid z-column within a ±6° azimuth
+  band, while a real gem facet occupies only a small z-band within a
+  333-row column — the synthetic bipyramid used to tune 0.15 mm had facets
+  spanning half the column, which is why that tolerance never transferred to
+  real facet geometry. The retune itself (uniform across all three
+  candidates, honestly reported) is correct and stands; only the stated
+  cause is wrong.
 
 - **The girdle prediction held, and generalized.** `gem.stl`'s girdle facets
   are genuinely near-vertical (3538/116640 faces, ~3% of face count and
@@ -232,14 +310,15 @@ provenance.
 
 | candidate | watertight | strike-free (metric+visual) | extents vs v2.3 | girdle facets | independence | notes |
 |---|:--:|:--:|---|:--:|---|---|
-| Cand-A RANSAC | Yes | Yes (0.0 µm, clean render) | 10–100× worse | None (gate kills near-vertical hyps) | shares kink+tol with C | most facets (216), slowest to tune-fail, safest offset (max-snap) |
-| Cand-B dual | Yes | Yes (0.0 µm, clean render) | 10–100× worse (worst of the three) | None (never generated) | genuinely distinct | fewest facets (20), fastest (0.9s), cleanest/most parameter-free method, safest offset (max-snap) |
-| Cand-C EGI | Yes | Yes (0.0 µm, clean render) | 10–100× worse (best of the three) | None (never generated) | shares kink+tol with A | slowest (9.1s), best X/Y accuracy but only candidate that can carve inward (median offset) |
+| Cand-A RANSAC | Yes | Yes (0.0 µm, clean render) | 2×–115× worse (depending on axis) | None (gate kills near-vertical hyps) | shares kink+tol with C | most facets (216), slowest to tune-fail, safest offset (max-snap) |
+| Cand-B dual | Yes | Yes (0.0 µm, clean render) | 2×–115× worse (worst of the three) | None (never generated) | genuinely distinct | fewest facets (20), fastest (0.9s), cleanest/most parameter-free method, safest offset (max-snap) |
+| Cand-C EGI | Yes | Yes (0.0 µm, clean render) | 2×–115× worse (best of the three) | None (never generated) | shares kink+tol with A | slowest (9.1s), best X/Y accuracy but only candidate that can carve inward (median offset) |
 
 **Recommendation: v2.3 remains the production method.** No candidate beats it
 on dimensional accuracy, and none closes the residual Z +77 µm gap that
-motivated the investigation — if anything, all three are 10–100× further
-from `gem.stl` than v2.3 already is. This is reported plainly, not softened:
+motivated the investigation — if anything, all three are 2×–115× further
+from `gem.stl` than v2.3 already is, depending on axis (worst in X/Y, closest
+in Z). This is reported plainly, not softened:
 the investigation's value here is the comparison itself, not a forced win.
 Nothing from Candidates A, B, or C should be ported into
 `gemscanner/reconstruction/` as a replacement algorithm.
@@ -290,6 +369,10 @@ they remain clean-room reference prototypes in `scratchpad/cleanroom/`.
 Harness code: `scratchpad/cleanroom/support_samples.py`, `polytope.py`,
 `strike_metric.py`, `cand_a_ransac.py`, `cand_b_dual.py`, `cand_c_egi.py`,
 `bakeoff.py`, `render.py`. Comparison render:
-`scratchpad/cleanroom/bakeoff_gem04.png`. Full per-task detail:
-`.superpowers/sdd/task-{1..7}-report.md`; controller ledger:
-`.superpowers/sdd/progress.md`.
+`scratchpad/cleanroom/bakeoff_gem04.png`. Per-task briefs, reports, and a
+controller ledger were kept as working artifacts of this investigation
+session under `.superpowers/sdd/` (task-{1..7}-brief/report.md,
+`progress.md`); these are git-ignored working notes, not committed record —
+the durable findings they document are captured in this note (notably the
+tolerance-sweep table inlined in §7 and the `gem.stl` reproduction evidence
+in §6).
