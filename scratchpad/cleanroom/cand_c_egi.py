@@ -29,7 +29,7 @@ def _local_slope_grid(samples, slope_win):
     return grid
 
 
-def reconstruct_egi(samples, merge_deg=6.0, slope_win=9, min_arc_deg=6.0):
+def reconstruct_egi(samples, merge_deg=6.0, slope_win=9, min_arc_deg=6.0, rms_tol_mm=0.15):
     """EGI / Gauss-sphere facet recovery.
 
     Key geometric fact this relies on: for a convex polytope, the right-edge
@@ -52,6 +52,15 @@ def reconstruct_egi(samples, merge_deg=6.0, slope_win=9, min_arc_deg=6.0):
     smooth local MAXIMUM of |alpha| (a stationary point of one smooth
     sinusoid), so this azimuth-domain local-minimum filter cleanly separates
     real facets from edge/vertex artifacts before any clustering happens.
+
+    A second failure mode survives the azimuth filter: near the girdle (z~0)
+    the sliding z-window straddles the crown/pavilion transition, producing
+    a handful of spurious near-horizontal clusters whose implied plane fits
+    the data poorly (facet_rms much larger than a genuine facet's, since a
+    genuine facet's plane matches its whole neighbourhood tightly while a
+    girdle-crossing artifact's does not). `rms_tol_mm` gates on this: a
+    cluster is only kept if its facet_rms is finite and <= rms_tol_mm, in
+    addition to the existing nin>=4 support-count gate.
     """
     grid = _local_slope_grid(samples, slope_win)
     H, V = grid.shape
@@ -101,6 +110,6 @@ def reconstruct_egi(samples, merge_deg=6.0, slope_win=9, min_arc_deg=6.0):
         beta = float(np.median(samples.h[sel, i] - alpha * samples.z[sel]))
         plane = affine_to_plane(theta_star, alpha, beta)
         rms, nin = facet_rms(plane, samples)
-        if nin >= 4:
+        if nin >= 4 and np.isfinite(rms) and rms <= rms_tol_mm:
             recs.append(dict(plane=plane, rms=rms, source="egi"))
     return recs

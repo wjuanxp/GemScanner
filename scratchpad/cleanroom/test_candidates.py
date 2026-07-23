@@ -36,3 +36,46 @@ def test_egi_recovers_bipyramid():
     assert np.median(err) < 3.0                  # normals within a few deg
     mesh, _, _ = planes_to_mesh([r["plane"] for r in recs])
     assert mesh.is_watertight
+
+
+def _unique_normals(normals, tol_deg=2.0):
+    out = []
+    cos_tol = np.cos(np.radians(tol_deg))
+    for n in normals:
+        n = n / np.linalg.norm(n)
+        if not any(float(np.dot(n, m)) >= cos_tol for m in out):
+            out.append(n)
+    return np.array(out)
+
+
+def _asymmetric_gem_planes():
+    """Irregular double-pyramid: 8 crown facets (up-tilt, top apex) at uneven
+    azimuths/slopes + 6 pavilion facets (down-tilt, bottom apex) at a DIFFERENT
+    uneven azimuth set. Mismatched crown/pavilion partition = the realistic
+    case that breaks naive normal recovery. All slanted -> watertight from
+    tangent facets alone (no horizontal caps needed)."""
+    rng = np.random.default_rng(0)
+    planes = []
+    for az in np.sort(rng.uniform(0, 2*np.pi, 8)):
+        slope = 0.7 + 0.15*rng.uniform()
+        a = np.cos(az); b = -np.sin(az); c = slope
+        nn = np.hypot(np.hypot(a, b), c)
+        planes.append((a/nn, b/nn, c/nn, 2.0/nn))
+    for az in np.sort(rng.uniform(0, 2*np.pi, 6)):
+        slope = -(1.2 + 0.3*rng.uniform())
+        a = np.cos(az); b = -np.sin(az); c = slope
+        nn = np.hypot(np.hypot(a, b), c)
+        planes.append((a/nn, b/nn, c/nn, 1.8/nn))
+    return planes
+
+
+def test_egi_recovers_asymmetric_gem():
+    planes = _asymmetric_gem_planes()
+    truth_mesh, _, _ = planes_to_mesh(planes)
+    s = _samples_for(planes, nth=360, nz=220)
+    recs = merge_planes(reconstruct_egi(s))
+    mesh, _, _ = planes_to_mesh([r["plane"] for r in recs])
+    truth_n = _unique_normals(np.array(truth_mesh.face_normals))
+    err = _normal_error_deg(recs, [(n[0], n[1], n[2], 0.0) for n in truth_n])
+    assert np.median(err) < 3.0                                    # recovered normals are real facets
+    assert abs(mesh.volume - truth_mesh.volume) / truth_mesh.volume < 0.06   # no spurious volume-carving
